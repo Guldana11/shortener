@@ -129,12 +129,14 @@ func TestURLHandler_GetHandler(t *testing.T) {
 			expectedStatus: http.StatusTemporaryRedirect,
 		},
 	}
-	for _, tt := range tests {
+	for i := range tests {
+		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
 			h := &URLHandler{
 				store: tt.fields.store,
 				mu:    tt.fields.mu,
 			}
+
 			if tt.args.r != nil && tt.args.w != nil {
 				h.GetHandler(tt.args.w, tt.args.r)
 				rec := tt.args.w.(*httptest.ResponseRecorder)
@@ -159,9 +161,10 @@ func TestURLHandler_GetHandler(t *testing.T) {
 					}
 				}
 			}
+
 			if tt.name == "Параллельный доступ" {
 				var wg sync.WaitGroup
-				for i := 0; i < 5; i++ {
+				for j := 0; j < 5; j++ {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
@@ -169,6 +172,7 @@ func TestURLHandler_GetHandler(t *testing.T) {
 						r := httptest.NewRequest(http.MethodGet, "/id1", nil)
 						h.GetHandler(w, r)
 						res := w.Result()
+						defer res.Body.Close()
 						if res.StatusCode != tt.expectedStatus && res.StatusCode != http.StatusBadRequest {
 							t.Errorf("unexpected status: %d", res.StatusCode)
 						}
@@ -178,6 +182,7 @@ func TestURLHandler_GetHandler(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func TestURLHandler_PostHandler(t *testing.T) {
@@ -233,7 +238,8 @@ func TestURLHandler_PostHandler(t *testing.T) {
 			expectedBody:   "bad request",
 		},
 	}
-	for _, tt := range tests {
+	for i := range tests {
+		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
 			h := &URLHandler{
 				store: tt.fields.store,
@@ -255,6 +261,7 @@ func TestURLHandler_PostHandler(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func Test_generateID(t *testing.T) {
