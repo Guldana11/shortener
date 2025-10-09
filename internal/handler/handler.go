@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type URLHandler struct {
@@ -43,12 +45,16 @@ func (h *URLHandler) PostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) GetHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	id := chi.URLParam(r, "id")
+	if id == "" && len(r.URL.Path) > 1 {
+		id = r.URL.Path[1:]
+	}
+
+	if id == "" || containsSlash(id) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	id := r.URL.Path[1:]
 	h.mu.Lock()
 	original, ok := h.store[id]
 	h.mu.Unlock()
@@ -68,4 +74,13 @@ func generateID() string {
 		b[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(b)
+}
+
+func containsSlash(s string) bool {
+	for _, c := range s {
+		if c == '/' {
+			return true
+		}
+	}
+	return false
 }

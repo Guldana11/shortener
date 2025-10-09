@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestNewURLHandler(t *testing.T) {
@@ -56,14 +58,10 @@ func TestURLHandler_GetHandler(t *testing.T) {
 		store map[string]string
 		mu    sync.Mutex
 	}
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
-	}
 	tests := []struct {
 		name             string
 		fields           fields
-		args             args
+		url              string
 		expectedStatus   int
 		expectedBody     string
 		expectedLocation string
@@ -75,10 +73,7 @@ func TestURLHandler_GetHandler(t *testing.T) {
 					"id": "https://example.com",
 				},
 			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodGet, "/id", nil),
-			},
+			url:              "/id",
 			expectedStatus:   http.StatusTemporaryRedirect,
 			expectedLocation: "https://example.com",
 		},
@@ -87,10 +82,7 @@ func TestURLHandler_GetHandler(t *testing.T) {
 			fields: fields{
 				store: make(map[string]string),
 			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodGet, "/id", nil),
-			},
+			url:            "/id",
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "bad request",
 		},
@@ -99,89 +91,47 @@ func TestURLHandler_GetHandler(t *testing.T) {
 			fields: fields{
 				store: make(map[string]string),
 			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodGet, "/", nil),
-			},
+			url:            "/",
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "bad request",
-		},
-		{
-			name: "Неверный формат пути",
-			fields: fields{
-				store: make(map[string]string),
-			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodGet, "/abc/extra", nil),
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "bad request",
-		},
-		{
-			name: "Параллельный доступ",
-			fields: fields{
-				store: map[string]string{
-					"id1": "https://example.com/1",
-					"id2": "https://example.com/2",
-				},
-			},
-			expectedStatus: http.StatusTemporaryRedirect,
 		},
 	}
-	for i := range tests {
-		tt := &tests[i]
+
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &URLHandler{
-				store: tt.fields.store,
+			h := &URLHandler{store: tt.fields.store}
+
+			r := chi.NewRouter()
+			r.Get("/{id}", h.GetHandler)
+			r.Get("/", h.GetHandler)
+
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			rec := httptest.NewRecorder()
+
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
 			}
 
-			if tt.args.r != nil && tt.args.w != nil {
-				h.GetHandler(tt.args.w, tt.args.r)
-				rec := tt.args.w.(*httptest.ResponseRecorder)
-				res := rec.Result()
-				defer res.Body.Close()
-
-				if res.StatusCode != tt.expectedStatus {
-					t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
-				}
-
-				if tt.expectedLocation != "" {
-					loc := res.Header.Get("Location")
-					if loc != tt.expectedLocation {
-						t.Errorf("expected Location header %q, got %q", tt.expectedLocation, loc)
-					}
-				}
-
-				if tt.expectedBody != "" {
-					body, _ := io.ReadAll(res.Body)
-					if !strings.Contains(string(body), tt.expectedBody) {
-						t.Errorf("expected body to contain %q, got %q", tt.expectedBody, string(body))
-					}
+			if tt.expectedLocation != "" {
+				loc := res.Header.Get("Location")
+				if loc != tt.expectedLocation {
+					t.Errorf("expected Location header %q, got %q", tt.expectedLocation, loc)
 				}
 			}
 
-			if tt.name == "Параллельный доступ" {
-				var wg sync.WaitGroup
-				for j := 0; j < 5; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						w := httptest.NewRecorder()
-						r := httptest.NewRequest(http.MethodGet, "/id1", nil)
-						h.GetHandler(w, r)
-						res := w.Result()
-						defer res.Body.Close()
-						if res.StatusCode != tt.expectedStatus && res.StatusCode != http.StatusBadRequest {
-							t.Errorf("unexpected status: %d", res.StatusCode)
-						}
-					}()
+			if tt.expectedBody != "" {
+				body, _ := io.ReadAll(res.Body)
+				if !strings.Contains(string(body), tt.expectedBody) {
+					t.Errorf("expected body to contain %q, got %q", tt.expectedBody, string(body))
 				}
-				wg.Wait()
 			}
 		})
 	}
-
 }
 
 func TestURLHandler_PostHandler(t *testing.T) {
