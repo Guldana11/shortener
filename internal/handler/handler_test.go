@@ -134,7 +134,6 @@ func TestURLHandler_GetHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &URLHandler{
 				store: tt.fields.store,
-				mu:    tt.fields.mu,
 			}
 
 			if tt.args.r != nil && tt.args.w != nil {
@@ -243,7 +242,6 @@ func TestURLHandler_PostHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &URLHandler{
 				store: tt.fields.store,
-				mu:    tt.fields.mu,
 			}
 			h.PostHandler(tt.args.w, tt.args.r)
 
