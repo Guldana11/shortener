@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
-	"time"
 )
 
 type URLHandler struct {
@@ -15,7 +14,6 @@ type URLHandler struct {
 }
 
 func NewURLHandler() *URLHandler {
-	rand.Seed(time.Now().UnixNano())
 	return &URLHandler{
 		store: make(map[string]string),
 	}

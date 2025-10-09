@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,8 +57,8 @@ func TestUserViewHandler(t *testing.T) {
 
 			assert.Equal(t, tt.want.statusCode, result.StatusCode)
 			assert.Equal(t, tt.want.contentType, result.Header.Get("Content-Type"))
+			userResult, err := io.ReadAll(result.Body)
 
-			userResult, err := ioutil.ReadAll(result.Body)
 			require.NoError(t, err)
 
 			var user Users
