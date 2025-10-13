@@ -40,7 +40,12 @@ func (h *URLHandler) PostHandler(w http.ResponseWriter, r *http.Request) {
 	h.store[id] = string(body)
 	h.mu.Unlock()
 
-	shortURL := fmt.Sprintf("%s/%s", h.BaseURL, id)
+	baseURL := h.BaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+
+	shortURL := fmt.Sprintf("%s/%s", baseURL, id)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
