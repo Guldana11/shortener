@@ -15,19 +15,20 @@ import (
 
 func TestNewURLHandler(t *testing.T) {
 	tests := []struct {
-		name string
-		want *URLHandler
+		name     string
+		baseURL  string
+		wantBase string
 	}{
 		{
-			name: "Успешное создание хэндлера",
-			want: &URLHandler{
-				store: map[string]string{},
-			},
+			name:     "Успешное создание хэндлера с базовым URL",
+			baseURL:  "http://localhost:8080",
+			wantBase: "http://localhost:8080",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewURLHandler()
+			got := NewURLHandler(tt.baseURL)
 			if got == nil {
 				t.Fatal("NewURLHandler() вернул nil, ожидался валидный объект")
 			}
@@ -40,15 +41,18 @@ func TestNewURLHandler(t *testing.T) {
 				t.Errorf("ожидался пустой store, получили длину %d", len(got.store))
 			}
 
-			got2 := NewURLHandler()
+			got2 := NewURLHandler(tt.baseURL)
 			if &got.store == &got2.store {
 				t.Error("два экземпляра NewURLHandler() ссылаются на одну и ту же map")
 			}
 
-			if !reflect.DeepEqual(got.store, tt.want.store) {
-				t.Errorf("store не совпадает: got %v, want %v", got.store, tt.want.store)
+			if got.BaseURL != tt.wantBase {
+				t.Errorf("BaseURL не совпадает: got %v, want %v", got.BaseURL, tt.wantBase)
 			}
 
+			if !reflect.DeepEqual(got.store, map[string]string{}) {
+				t.Errorf("store не совпадает: got %v, want пустой map", got.store)
+			}
 		})
 	}
 }

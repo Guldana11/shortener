@@ -11,13 +11,15 @@ import (
 )
 
 type URLHandler struct {
-	store map[string]string
-	mu    sync.Mutex
+	store   map[string]string
+	mu      sync.Mutex
+	BaseURL string
 }
 
-func NewURLHandler() *URLHandler {
+func NewURLHandler(baseURL string) *URLHandler {
 	return &URLHandler{
-		store: make(map[string]string),
+		store:   make(map[string]string),
+		BaseURL: baseURL,
 	}
 }
 
@@ -38,7 +40,8 @@ func (h *URLHandler) PostHandler(w http.ResponseWriter, r *http.Request) {
 	h.store[id] = string(body)
 	h.mu.Unlock()
 
-	shortURL := fmt.Sprintf("http://localhost:8080/%s", id)
+	shortURL := fmt.Sprintf("%s/%s", h.BaseURL, id)
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(shortURL))
