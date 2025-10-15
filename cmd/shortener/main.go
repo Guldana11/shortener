@@ -1,23 +1,37 @@
 package main
 
 import (
-	"log"
-	"net/http"
-
 	"github.com/Guldana11/shortener/internal/config"
 	"github.com/Guldana11/shortener/internal/handler"
-	"github.com/go-chi/chi/v5"
+	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
 	cfg := config.Init()
 
-	h := handler.NewURLHandler(cfg.BaseURL)
-	r := chi.NewRouter()
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+	log.SetLevel(log.InfoLevel)
 
-	r.Post("/", h.PostHandler)
-	r.Get("/{id}", h.GetHandler)
+	repo := repository.NewURLRepository()
+	h := handler.NewURLHandler(cfg.BaseURL, repo)
 
-	log.Printf("Server is running on %s\n", cfg.Address)
-	log.Fatal(http.ListenAndServe(cfg.Address, r))
+	r := setupRouter(h)
+
+	log.Infof("Server is running on %s", cfg.Address)
+	if err := r.Run(cfg.Address); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func setupRouter(h *handler.URLHandler) *gin.Engine {
+	r := gin.Default()
+
+	r.POST("/", h.PostHandler)
+	r.GET("/:id", h.GetHandler)
+
+	return r
 }

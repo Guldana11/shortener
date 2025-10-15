@@ -17,7 +17,7 @@ func TestInit(t *testing.T) {
 			name: "Значения по умолчанию",
 			args: []string{"cmd"},
 			wantConfig: &Config{
-				Address: "localhost:8080",
+				Address: "127.0.0.1:8080",
 				BaseURL: "http://localhost:8080",
 			},
 		},

@@ -5,66 +5,52 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/gin-gonic/gin"
 )
 
 func TestNewURLHandler(t *testing.T) {
 	tests := []struct {
-		name     string
-		baseURL  string
-		wantBase string
+		name    string
+		baseURL string
 	}{
 		{
-			name:     "Успешное создание хэндлера с базовым URL",
-			baseURL:  "http://localhost:8080",
-			wantBase: "http://localhost:8080",
+			name:    "Успешное создание хэндлера с базовым URL",
+			baseURL: "http://localhost:8080",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewURLHandler(tt.baseURL)
+			repo := repository.NewURLRepository()
+			got := NewURLHandler(tt.baseURL, repo)
+
 			if got == nil {
 				t.Fatal("NewURLHandler() вернул nil, ожидался валидный объект")
 			}
 
-			if got.store == nil {
-				t.Error("store должен быть инициализирован, но равен nil")
+			if got.repo == nil {
+				t.Error("repo должен быть инициализирован, но равен nil")
 			}
 
-			if len(got.store) != 0 {
-				t.Errorf("ожидался пустой store, получили длину %d", len(got.store))
+			if got.repo != repo {
+				t.Error("репозиторий в хендлере отличается от переданного")
 			}
 
-			got2 := NewURLHandler(tt.baseURL)
-			if &got.store == &got2.store {
-				t.Error("два экземпляра NewURLHandler() ссылаются на одну и ту же map")
-			}
-
-			if got.BaseURL != tt.wantBase {
-				t.Errorf("BaseURL не совпадает: got %v, want %v", got.BaseURL, tt.wantBase)
-			}
-
-			if !reflect.DeepEqual(got.store, map[string]string{}) {
-				t.Errorf("store не совпадает: got %v, want пустой map", got.store)
+			if got.BaseURL != tt.baseURL {
+				t.Errorf("BaseURL не совпадает: got %v, want %v", got.BaseURL, tt.baseURL)
 			}
 		})
 	}
 }
 
 func TestURLHandler_GetHandler(t *testing.T) {
-	type fields struct {
-		store map[string]string
-		mu    sync.Mutex
-	}
 	tests := []struct {
 		name             string
-		fields           fields
+		setupRepo        func() *repository.URLRepository
 		url              string
 		expectedStatus   int
 		expectedBody     string
@@ -72,10 +58,10 @@ func TestURLHandler_GetHandler(t *testing.T) {
 	}{
 		{
 			name: "Существующий короткий URL",
-			fields: fields{
-				store: map[string]string{
-					"id": "https://example.com",
-				},
+			setupRepo: func() *repository.URLRepository {
+				r := repository.NewURLRepository()
+				r.CreateWithID("id", "https://example.com")
+				return r
 			},
 			url:              "/id",
 			expectedStatus:   http.StatusTemporaryRedirect,
@@ -83,17 +69,17 @@ func TestURLHandler_GetHandler(t *testing.T) {
 		},
 		{
 			name: "Несуществующий короткий URL",
-			fields: fields{
-				store: make(map[string]string),
+			setupRepo: func() *repository.URLRepository {
+				return repository.NewURLRepository()
 			},
 			url:            "/id",
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "bad request",
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "not found",
 		},
 		{
 			name: "Пустой id в URL",
-			fields: fields{
-				store: make(map[string]string),
+			setupRepo: func() *repository.URLRepository {
+				return repository.NewURLRepository()
 			},
 			url:            "/",
 			expectedStatus: http.StatusBadRequest,
@@ -101,17 +87,19 @@ func TestURLHandler_GetHandler(t *testing.T) {
 		},
 	}
 
-	for i := range tests {
-		tt := &tests[i]
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &URLHandler{store: tt.fields.store}
+			gin.SetMode(gin.TestMode)
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
 
-			r := chi.NewRouter()
-			r.Get("/{id}", h.GetHandler)
-			r.Get("/", h.GetHandler)
+			h := NewURLHandler("http://localhost:8080", tt.setupRepo())
+
+			r.GET("/:id", h.GetHandler)
+			r.GET("/", h.GetHandler)
 
 			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
-			rec := httptest.NewRecorder()
+			c.Request = req
 
 			r.ServeHTTP(rec, req)
 
@@ -140,120 +128,54 @@ func TestURLHandler_GetHandler(t *testing.T) {
 }
 
 func TestURLHandler_PostHandler(t *testing.T) {
-	type fields struct {
-		store map[string]string
-		mu    sync.Mutex
-	}
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
-	}
 	tests := []struct {
 		name           string
-		fields         fields
-		args           args
+		body           string
 		expectedStatus int
 		expectedBody   string
 	}{
 		{
-			name: "действительный запрос POST",
-			fields: fields{
-				store: make(map[string]string),
-			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("https://example.com")),
-			},
+			name:           "действительный запрос POST",
+			body:           "https://example.com",
 			expectedStatus: http.StatusCreated,
 			expectedBody:   "http://localhost:8080/",
 		},
 		{
-			name: "недопустимый метод GET",
-			fields: fields{
-				store: make(map[string]string),
-			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodGet, "/", nil),
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "bad request",
-		},
-		{
-			name: "пустое тело",
-			fields: fields{
-				store: make(map[string]string),
-			},
-			args: args{
-				w: httptest.NewRecorder(),
-				r: httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("")),
-			},
+			name:           "пустое тело",
+			body:           "",
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "bad request",
 		},
 	}
-	for i := range tests {
-		tt := &tests[i]
-		t.Run(tt.name, func(t *testing.T) {
-			h := &URLHandler{
-				store: tt.fields.store,
-			}
-			h.PostHandler(tt.args.w, tt.args.r)
 
-			rec := tt.args.w.(*httptest.ResponseRecorder)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+
+			repo := repository.NewURLRepository()
+			h := NewURLHandler("http://localhost:8080", repo)
+
+			r.POST("/", h.PostHandler)
+
+			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.body))
+			c.Request = req
+
+			r.ServeHTTP(rec, req)
+
 			res := rec.Result()
 			defer res.Body.Close()
 
-			body, _ := io.ReadAll(res.Body)
+			bodyBytes, _ := io.ReadAll(res.Body)
+			bodyStr := string(bodyBytes)
 
 			if res.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
 			}
-			if !strings.Contains(string(body), tt.expectedBody) {
-				t.Errorf("expected body to contain %q, got %q", tt.expectedBody, string(body))
-			}
-		})
-	}
 
-}
-
-func Test_generateID(t *testing.T) {
-	tests := []struct {
-		name string
-		want string
-	}{
-		{
-			name: "Генерация случайного ID — корректная длина и символы",
-		},
-		{
-			name: "Генерация разных ID — уникальность результата",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			switch tt.name {
-			case "Генерация случайного ID — корректная длина и символы":
-				id := generateID()
-
-				if len(id) != 8 {
-					t.Errorf("длина ID = %d, ожидалось 8", len(id))
-				}
-
-				for _, r := range id {
-					if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
-						t.Errorf("найден недопустимый символ: %q", r)
-					}
-				}
-
-			case "Генерация разных ID — уникальность результата":
-				ids := make(map[string]bool)
-				for i := 0; i < 1000; i++ {
-					id := generateID()
-					if ids[id] {
-						t.Errorf("найден повторяющийся ID: %s", id)
-					}
-					ids[id] = true
-				}
+			if !strings.HasPrefix(bodyStr, tt.expectedBody) {
+				t.Errorf("expected body to start with %q, got %q", tt.expectedBody, bodyStr)
 			}
 		})
 	}

@@ -3,42 +3,32 @@ package handler
 import (
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
-	"sync"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/gin-gonic/gin"
 )
 
 type URLHandler struct {
-	store   map[string]string
-	mu      sync.Mutex
+	repo    *repository.URLRepository
 	BaseURL string
 }
 
-func NewURLHandler(baseURL string) *URLHandler {
+func NewURLHandler(baseURL string, repo *repository.URLRepository) *URLHandler {
 	return &URLHandler{
-		store:   make(map[string]string),
+		repo:    repo,
 		BaseURL: baseURL,
 	}
 }
 
-func (h *URLHandler) PostHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
+func (h *URLHandler) PostHandler(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil || len(body) == 0 {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		c.String(http.StatusBadRequest, "bad request")
 		return
 	}
 
-	id := generateID()
-	h.mu.Lock()
-	h.store[id] = string(body)
-	h.mu.Unlock()
+	id := h.repo.Create(string(body))
 
 	baseURL := h.BaseURL
 	if baseURL == "" {
@@ -46,42 +36,23 @@ func (h *URLHandler) PostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shortURL := fmt.Sprintf("%s/%s", baseURL, id)
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusCreated)
-	_, _ = w.Write([]byte(shortURL))
+	c.String(http.StatusCreated, shortURL)
 }
 
-func (h *URLHandler) GetHandler(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" && len(r.URL.Path) > 1 {
-		id = r.URL.Path[1:]
-	}
-
+func (h *URLHandler) GetHandler(c *gin.Context) {
+	id := c.Param("id")
 	if id == "" || containsSlash(id) {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		c.String(http.StatusBadRequest, "bad request")
 		return
 	}
 
-	h.mu.Lock()
-	original, ok := h.store[id]
-	h.mu.Unlock()
+	original, ok := h.repo.Get(id)
 	if !ok {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		c.String(http.StatusNotFound, "not found")
 		return
 	}
 
-	w.Header().Set("Location", original)
-	w.WriteHeader(http.StatusTemporaryRedirect)
-}
-
-func generateID() string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 8)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
+	c.Redirect(http.StatusTemporaryRedirect, original)
 }
 
 func containsSlash(s string) bool {
