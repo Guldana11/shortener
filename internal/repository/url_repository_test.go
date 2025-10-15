@@ -33,7 +33,6 @@ func TestNewURLRepository(t *testing.T) {
 func TestURLRepository_Create(t *testing.T) {
 	type fields struct {
 		store map[string]string
-		mu    sync.RWMutex
 	}
 	type args struct {
 		originalURL string
@@ -58,7 +57,7 @@ func TestURLRepository_Create(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &URLRepository{
 				store: tt.fields.store,
-				mu:    tt.fields.mu,
+				mu:    sync.RWMutex{},
 			}
 
 			id := r.Create(tt.args.originalURL)
@@ -80,7 +79,6 @@ func TestURLRepository_Create(t *testing.T) {
 func TestURLRepository_CreateWithID(t *testing.T) {
 	type fields struct {
 		store map[string]string
-		mu    sync.RWMutex
 	}
 	type args struct {
 		id          string
@@ -107,7 +105,7 @@ func TestURLRepository_CreateWithID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &URLRepository{
 				store: tt.fields.store,
-				mu:    tt.fields.mu,
+				mu:    sync.RWMutex{},
 			}
 			r.CreateWithID(tt.args.id, tt.args.originalURL)
 
@@ -125,7 +123,6 @@ func TestURLRepository_CreateWithID(t *testing.T) {
 func TestURLRepository_Get(t *testing.T) {
 	type fields struct {
 		store map[string]string
-		mu    sync.RWMutex
 	}
 	type args struct {
 		id string
@@ -167,7 +164,7 @@ func TestURLRepository_Get(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &URLRepository{
 				store: tt.fields.store,
-				mu:    tt.fields.mu,
+				mu:    sync.RWMutex{},
 			}
 			got, got1 := r.Get(tt.args.id)
 			if got != tt.want {
