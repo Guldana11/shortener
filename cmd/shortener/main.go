@@ -1,3 +1,37 @@
 package main
 
-func main() {}
+import (
+	"github.com/Guldana11/shortener/internal/config"
+	"github.com/Guldana11/shortener/internal/handler"
+	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
+)
+
+func main() {
+	cfg := config.Init()
+
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+	log.SetLevel(log.InfoLevel)
+
+	repo := repository.NewURLRepository()
+	h := handler.NewURLHandler(cfg.BaseURL, repo)
+
+	r := setupRouter(h)
+
+	log.Infof("Server is running on %s", cfg.Address)
+	if err := r.Run(cfg.Address); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func setupRouter(h *handler.URLHandler) *gin.Engine {
+	r := gin.Default()
+
+	r.POST("/", h.PostHandler)
+	r.GET("/:id", h.GetHandler)
+
+	return r
+}
