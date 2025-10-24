@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/Guldana11/shortener/internal/config"
 	"github.com/Guldana11/shortener/internal/handler"
+	"github.com/Guldana11/shortener/internal/middleware"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -28,7 +29,9 @@ func main() {
 }
 
 func setupRouter(h *handler.URLHandler) *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(middleware.LoggerMiddleware())
 
 	r.POST("/", h.PostHandler)
 	r.GET("/:id", h.GetHandler)
