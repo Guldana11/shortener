@@ -5,7 +5,9 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -53,6 +55,19 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusTemporaryRedirect, original)
+}
+
+func (h *URLHandler) ShortenHandler(c *gin.Context) {
+	var req model.ShortenRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.URL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	shortID := h.repo.Create(req.URL)
+	shortURL := h.BaseURL + "/" + shortID
+
+	c.JSON(http.StatusCreated, model.ShortenResponse{Result: shortURL})
 }
 
 func containsSlash(s string) bool {

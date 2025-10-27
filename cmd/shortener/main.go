@@ -35,6 +35,7 @@ func setupRouter(h *handler.URLHandler) *gin.Engine {
 
 	r.POST("/", h.PostHandler)
 	r.GET("/:id", h.GetHandler)
+	r.POST("/api/shorten", h.ShortenHandler)
 
 	return r
 }

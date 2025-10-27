@@ -2,12 +2,14 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
 )
@@ -176,6 +178,81 @@ func TestURLHandler_PostHandler(t *testing.T) {
 
 			if !strings.HasPrefix(bodyStr, tt.expectedBody) {
 				t.Errorf("expected body to start with %q, got %q", tt.expectedBody, bodyStr)
+			}
+		})
+	}
+}
+
+func TestURLHandler_ShortenHandler(t *testing.T) {
+	tests := []struct {
+		name           string
+		body           string
+		expectedStatus int
+		expectedPrefix string
+	}{
+		{
+			name:           "действительный JSON-запрос",
+			body:           `{"url":"https://example.com"}`,
+			expectedStatus: http.StatusCreated,
+			expectedPrefix: `http://localhost:8080/`,
+		},
+		{
+			name:           "пустой JSON",
+			body:           `{}`,
+			expectedStatus: http.StatusBadRequest,
+			expectedPrefix: `{"error":"invalid request"}`,
+		},
+		{
+			name:           "невалидный JSON",
+			body:           `invalid`,
+			expectedStatus: http.StatusBadRequest,
+			expectedPrefix: `{"error":"invalid request"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+
+			repo := repository.NewURLRepository()
+			h := NewURLHandler("http://localhost:8080", repo)
+
+			r.POST("/api/shorten", h.ShortenHandler)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			c.Request = req
+
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			bodyBytes, _ := io.ReadAll(res.Body)
+			bodyStr := string(bodyBytes)
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if tt.expectedStatus == http.StatusCreated {
+				var resp model.ShortenResponse
+				if err := json.Unmarshal(bodyBytes, &resp); err != nil {
+					t.Fatalf("failed to unmarshal JSON: %v", err)
+				}
+				if !strings.HasPrefix(resp.Result, tt.expectedPrefix) {
+					t.Errorf("expected result to start with %q, got %q", tt.expectedPrefix, resp.Result)
+				}
+
+				if ct := res.Header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
+					t.Errorf("expected Content-Type application/json, got %s", ct)
+				}
+			} else {
+				if !strings.HasPrefix(bodyStr, tt.expectedPrefix) {
+					t.Errorf("expected body to start with %q, got %q", tt.expectedPrefix, bodyStr)
+				}
 			}
 		})
 	}
