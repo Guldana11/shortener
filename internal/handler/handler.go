@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,9 +66,15 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	}
 
 	shortID := h.repo.Create(req.URL)
-	shortURL := h.BaseURL + "/" + shortID
+	shortURL := fmt.Sprintf("%s/%s", h.BaseURL, shortID)
 
-	c.JSON(http.StatusCreated, model.ShortenResponse{Result: shortURL})
+	resp := model.ShortenResponse{Result: shortURL}
+
+	c.Header("Content-Type", "application/json")
+	c.Status(http.StatusCreated)
+	if err := json.NewEncoder(c.Writer).Encode(resp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode JSON"})
+	}
 }
 
 func containsSlash(s string) bool {

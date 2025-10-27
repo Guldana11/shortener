@@ -246,7 +246,7 @@ func TestURLHandler_ShortenHandler(t *testing.T) {
 					t.Errorf("expected result to start with %q, got %q", tt.expectedPrefix, resp.Result)
 				}
 
-				if ct := res.Header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
+				if ct := res.Header.Get("Content-Type"); ct != "application/json" {
 					t.Errorf("expected Content-Type application/json, got %s", ct)
 				}
 			} else {
