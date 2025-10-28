@@ -25,15 +25,26 @@ func (r *URLRepository) CreateWithID(id, originalURL string) {
 func (r *URLRepository) Create(originalURL string) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	b := make([]byte, 8)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+	var id string
+	for {
+		b := make([]byte, 8)
+		for i := range b {
+			b[i] = letters[rand.Intn(len(letters))]
+		}
+		id = string(b)
+
+		r.mu.RLock()
+		_, exists := r.store[id]
+		r.mu.RUnlock()
+
+		if !exists {
+			break
+		}
 	}
-	id := string(b)
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.store[id] = originalURL
+	r.mu.Unlock()
 
 	return id
 }

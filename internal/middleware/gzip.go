@@ -11,7 +11,7 @@ import (
 
 func GzipMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetHeader("Content-Encoding") == "gzip" {
+		if strings.Contains(c.GetHeader("Content-Encoding"), "gzip") {
 			gzReader, err := gzip.NewReader(c.Request.Body)
 			if err != nil {
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid gzip body"})
@@ -24,12 +24,16 @@ func GzipMiddleware() gin.HandlerFunc {
 		if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
 			c.Writer.Header().Set("Content-Encoding", "gzip")
 			gzWriter := gzip.NewWriter(c.Writer)
-			defer gzWriter.Close()
-
-			c.Writer = &gzipResponseWriter{
+			gzw := &gzipResponseWriter{
 				ResponseWriter: c.Writer,
 				Writer:         gzWriter,
 			}
+			c.Writer = gzw
+
+			c.Next()
+
+			gzWriter.Close()
+			return
 		}
 
 		c.Next()
@@ -42,9 +46,5 @@ type gzipResponseWriter struct {
 }
 
 func (w *gzipResponseWriter) Write(data []byte) (int, error) {
-	contentType := w.Header().Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") || strings.HasPrefix(contentType, "text/html") {
-		return w.Writer.Write(data)
-	}
-	return w.ResponseWriter.Write(data)
+	return w.Writer.Write(data)
 }
