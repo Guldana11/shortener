@@ -27,7 +27,7 @@ func TestNewURLHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := repository.NewURLRepository()
+			repo := repository.NewURLRepository("test_data.json")
 			got := NewURLHandler(tt.baseURL, repo)
 
 			if got == nil {

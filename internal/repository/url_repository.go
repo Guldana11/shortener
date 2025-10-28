@@ -14,12 +14,16 @@ type URLRepository struct {
 	file  string
 }
 
-func NewURLRepository(filePath string) *URLRepository {
-	r := &URLRepository{
-		store: make(map[string]string),
-		file:  filePath,
+func NewURLRepository(filePath ...string) *URLRepository {
+	path := ""
+	if len(filePath) > 0 {
+		path = filePath[0]
 	}
 
+	r := &URLRepository{
+		store: make(map[string]string),
+		file:  path,
+	}
 	r.loadFromFile()
 	return r
 }
@@ -83,11 +87,10 @@ func (r *URLRepository) loadFromFile() {
 
 func generateID() string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	rand.Seed(time.Now().UnixNano())
-
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	id := make([]byte, 8)
 	for i := range id {
-		id[i] = letters[rand.Intn(len(letters))]
+		id[i] = letters[r.Intn(len(letters))]
 	}
 	return string(id)
 }
