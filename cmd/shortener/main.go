@@ -17,7 +17,7 @@ func main() {
 	})
 	log.SetLevel(log.InfoLevel)
 
-	repo := repository.NewURLRepository()
+	repo := repository.NewURLRepository(cfg.FileStoragePath)
 	h := handler.NewURLHandler(cfg.BaseURL, repo)
 
 	r := setupRouter(h)
