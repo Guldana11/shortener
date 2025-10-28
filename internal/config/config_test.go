@@ -19,29 +19,53 @@ func TestInit(t *testing.T) {
 			args: []string{"cmd"},
 			env:  nil,
 			wantConfig: &Config{
-				Address: "127.0.0.1:8080",
-				BaseURL: "http://localhost:8080",
+				Address:         "127.0.0.1:8080",
+				BaseURL:         "http://localhost:8080",
+				FileStoragePath: "data.json",
 			},
 		},
 		{
 			name: "Переопределение через флаги",
-			args: []string{"cmd", "-a", "127.0.0.1:9999", "-b", "http://example.com"},
+			args: []string{"cmd", "-a", "127.0.0.1:9999", "-b", "http://example.com", "-f", "urls.json"},
 			env:  nil,
 			wantConfig: &Config{
-				Address: "127.0.0.1:9999",
-				BaseURL: "http://example.com",
+				Address:         "127.0.0.1:9999",
+				BaseURL:         "http://example.com",
+				FileStoragePath: "urls.json",
 			},
 		},
 		{
 			name: "Переопределение через переменные окружения",
-			args: []string{"cmd", "-a", "127.0.0.1:9999", "-b", "http://example.com"},
+			args: []string{"cmd", "-a", "127.0.0.1:9999", "-b", "http://example.com", "-f", "urls.json"},
 			env: map[string]string{
-				"SERVER_ADDRESS": "0.0.0.0:3000",
-				"BASE_URL":       "http://myshort.io",
+				"SERVER_ADDRESS":    "0.0.0.0:3000",
+				"BASE_URL":          "http://myshort.io",
+				"FILE_STORAGE_PATH": "env.json",
 			},
 			wantConfig: &Config{
-				Address: "0.0.0.0:3000",
-				BaseURL: "http://myshort.io",
+				Address:         "0.0.0.0:3000",
+				BaseURL:         "http://myshort.io",
+				FileStoragePath: "env.json",
+			},
+		},
+		{
+			name: "Флаг используется если ENV пустой",
+			args: []string{"cmd", "-f", "flag.json"},
+			env:  map[string]string{},
+			wantConfig: &Config{
+				Address:         "127.0.0.1:8080",
+				BaseURL:         "http://localhost:8080",
+				FileStoragePath: "flag.json",
+			},
+		},
+		{
+			name: "Используется значение по умолчанию, если нет ENV и флага",
+			args: []string{"cmd"},
+			env:  map[string]string{},
+			wantConfig: &Config{
+				Address:         "127.0.0.1:8080",
+				BaseURL:         "http://localhost:8080",
+				FileStoragePath: "data.json",
 			},
 		},
 	}
@@ -50,13 +74,16 @@ func TestInit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			oldServerAddr := os.Getenv("SERVER_ADDRESS")
 			oldBaseURL := os.Getenv("BASE_URL")
+			oldFilePath := os.Getenv("FILE_STORAGE_PATH")
 			defer func() {
 				os.Setenv("SERVER_ADDRESS", oldServerAddr)
 				os.Setenv("BASE_URL", oldBaseURL)
+				os.Setenv("FILE_STORAGE_PATH", oldFilePath)
 			}()
 
 			os.Unsetenv("SERVER_ADDRESS")
 			os.Unsetenv("BASE_URL")
+			os.Unsetenv("FILE_STORAGE_PATH")
 			for k, v := range tt.env {
 				os.Setenv(k, v)
 			}
