@@ -32,6 +32,7 @@ func setupRouter(h *handler.URLHandler) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.LoggerMiddleware())
+	r.Use(middleware.GzipMiddleware())
 
 	r.POST("/", h.PostHandler)
 	r.GET("/:id", h.GetHandler)
