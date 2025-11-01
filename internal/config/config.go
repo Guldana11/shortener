@@ -8,7 +8,7 @@ import (
 type Config struct {
 	Address         string
 	BaseURL         string
-	FileStoragePath string // новый параметр
+	FileStoragePath string
 }
 
 func Init() *Config {
@@ -18,22 +18,18 @@ func Init() *Config {
 
 	flag.Parse()
 
-	addressEnv := os.Getenv("SERVER_ADDRESS")
-	baseURLEnv := os.Getenv("BASE_URL")
-	fileEnv := os.Getenv("FILE_STORAGE_PATH")
-
 	address := *addressFlag
 	baseURL := *baseURLFlag
 	filePath := *fileFlag
 
-	if addressEnv != "" {
-		address = addressEnv
+	if v, ok := os.LookupEnv("SERVER_ADDRESS"); ok {
+		address = v
 	}
-	if baseURLEnv != "" {
-		baseURL = baseURLEnv
+	if v, ok := os.LookupEnv("BASE_URL"); ok {
+		baseURL = v
 	}
-	if fileEnv != "" {
-		filePath = fileEnv
+	if v, ok := os.LookupEnv("FILE_STORAGE_PATH"); ok {
+		filePath = v
 	}
 
 	return &Config{

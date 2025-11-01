@@ -4,13 +4,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
-func LoggerMiddleware() gin.HandlerFunc {
+func LoggerMiddleware(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-
 		c.Next()
 
 		duration := time.Since(start)
@@ -22,12 +21,12 @@ func LoggerMiddleware() gin.HandlerFunc {
 			uri = c.Request.RequestURI
 		}
 
-		log.WithFields(log.Fields{
-			"method":        method,
-			"uri":           uri,
-			"status":        status,
-			"response_size": size,
-			"duration_ms":   duration.Milliseconds(),
-		}).Info("HTTP request completed")
+		logger.Info("HTTP request completed",
+			zap.String("method", method),
+			zap.String("uri", uri),
+			zap.Int("status", status),
+			zap.Int("response_size", size),
+			zap.Int64("duration_ms", duration.Milliseconds()),
+		)
 	}
 }

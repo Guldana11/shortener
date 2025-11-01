@@ -59,18 +59,21 @@ func TestGzipMiddleware(t *testing.T) {
 				resp := map[string]string{"result": "http://localhost:8080/12345"}
 				c.Header("Content-Type", "application/json")
 				c.Status(http.StatusCreated)
-				json.NewEncoder(c.Writer).Encode(resp)
+				if err := json.NewEncoder(c.Writer).Encode(resp); err != nil {
+					t.Errorf("failed to encode response: %v", err)
+				}
 			})
 
 			var reqBody io.Reader
 			if tt.compressRequest {
 				var buf bytes.Buffer
 				gz := gzip.NewWriter(&buf)
-				_, err := gz.Write([]byte(tt.requestBody))
-				if err != nil {
+				if _, err := gz.Write([]byte(tt.requestBody)); err != nil {
 					t.Fatalf("failed to gzip request body: %v", err)
 				}
-				gz.Close()
+				if err := gz.Close(); err != nil {
+					t.Fatalf("failed to close gzip writer: %v", err)
+				}
 				reqBody = &buf
 			} else {
 				reqBody = bytes.NewBufferString(tt.requestBody)
@@ -89,16 +92,29 @@ func TestGzipMiddleware(t *testing.T) {
 			r.ServeHTTP(rec, req)
 
 			res := rec.Result()
-			defer res.Body.Close()
-			bodyBytes, _ := io.ReadAll(res.Body)
+			defer func() {
+				if err := res.Body.Close(); err != nil {
+					t.Errorf("failed to close response body: %v", err)
+				}
+			}()
+
+			bodyBytes, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("failed to read response body: %v", err)
+			}
 
 			if tt.acceptGzip {
 				gzReader, err := gzip.NewReader(bytes.NewReader(bodyBytes))
 				if err != nil {
 					t.Fatalf("failed to create gzip reader: %v", err)
 				}
-				bodyBytes, _ = io.ReadAll(gzReader)
-				gzReader.Close()
+				bodyBytes, err = io.ReadAll(gzReader)
+				if err != nil {
+					t.Fatalf("failed to read gzip response: %v", err)
+				}
+				if err := gzReader.Close(); err != nil {
+					t.Errorf("failed to close gzip reader: %v", err)
+				}
 			}
 
 			bodyStr := string(bodyBytes)
