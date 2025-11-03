@@ -3,9 +3,13 @@ package repository
 import (
 	"sync"
 	"testing"
+
+	"github.com/Guldana11/shortener/internal/config"
 )
 
 func TestNewURLRepository(t *testing.T) {
+	cfg := config.Init()
+
 	tests := []struct {
 		name string
 	}{
@@ -16,7 +20,7 @@ func TestNewURLRepository(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := NewURLRepository()
+			repo := NewURLRepository(cfg.FileStoragePath)
 			if repo == nil {
 				t.Fatal("NewURLRepository вернул nil")
 			}

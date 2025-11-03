@@ -2,132 +2,27 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-func TestNewURLHandler(t *testing.T) {
-	tests := []struct {
-		name    string
-		baseURL string
-	}{
-		{
-			name:    "Успешное создание хэндлера с базовым URL",
-			baseURL: "http://localhost:8080",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := repository.NewURLRepository()
-			got := NewURLHandler(tt.baseURL, repo)
-
-			if got == nil {
-				t.Fatal("NewURLHandler() вернул nil, ожидался валидный объект")
-			}
-
-			if got.repo == nil {
-				t.Error("repo должен быть инициализирован, но равен nil")
-			}
-
-			if got.repo != repo {
-				t.Error("репозиторий в хендлере отличается от переданного")
-			}
-
-			if got.BaseURL != tt.baseURL {
-				t.Errorf("BaseURL не совпадает: got %v, want %v", got.BaseURL, tt.baseURL)
-			}
-		})
-	}
+func newTestLogger(buf *bytes.Buffer) *zap.Logger {
+	encoder := zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig())
+	core := zapcore.NewCore(encoder, zapcore.AddSync(buf), zapcore.DebugLevel)
+	return zap.New(core)
 }
 
-func TestURLHandler_GetHandler(t *testing.T) {
-	tests := []struct {
-		name             string
-		setupRepo        func() *repository.URLRepository
-		url              string
-		expectedStatus   int
-		expectedBody     string
-		expectedLocation string
-	}{
-		{
-			name: "Существующий короткий URL",
-			setupRepo: func() *repository.URLRepository {
-				r := repository.NewURLRepository()
-				r.CreateWithID("id", "https://example.com")
-				return r
-			},
-			url:              "/id",
-			expectedStatus:   http.StatusTemporaryRedirect,
-			expectedLocation: "https://example.com",
-		},
-		{
-			name: "Несуществующий короткий URL",
-			setupRepo: func() *repository.URLRepository {
-				return repository.NewURLRepository()
-			},
-			url:            "/id",
-			expectedStatus: http.StatusNotFound,
-			expectedBody:   "not found",
-		},
-		{
-			name: "Пустой id в URL",
-			setupRepo: func() *repository.URLRepository {
-				return repository.NewURLRepository()
-			},
-			url:            "/",
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "bad request",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gin.SetMode(gin.TestMode)
-			rec := httptest.NewRecorder()
-			c, r := gin.CreateTestContext(rec)
-
-			h := NewURLHandler("http://localhost:8080", tt.setupRepo())
-
-			r.GET("/:id", h.GetHandler)
-			r.GET("/", h.GetHandler)
-
-			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
-			c.Request = req
-
-			r.ServeHTTP(rec, req)
-
-			res := rec.Result()
-			defer res.Body.Close()
-
-			if res.StatusCode != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
-			}
-
-			if tt.expectedLocation != "" {
-				loc := res.Header.Get("Location")
-				if loc != tt.expectedLocation {
-					t.Errorf("expected Location header %q, got %q", tt.expectedLocation, loc)
-				}
-			}
-
-			if tt.expectedBody != "" {
-				body, _ := io.ReadAll(res.Body)
-				if !strings.Contains(string(body), tt.expectedBody) {
-					t.Errorf("expected body to contain %q, got %q", tt.expectedBody, string(body))
-				}
-			}
-		})
-	}
-}
-
-func TestURLHandler_PostHandler(t *testing.T) {
+func TestPostHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		body           string
@@ -135,31 +30,180 @@ func TestURLHandler_PostHandler(t *testing.T) {
 		expectedBody   string
 	}{
 		{
-			name:           "действительный запрос POST",
+			name:           "успешное создание короткой ссылки",
 			body:           "https://example.com",
 			expectedStatus: http.StatusCreated,
 			expectedBody:   "http://localhost:8080/",
 		},
 		{
-			name:           "пустое тело",
+			name:           "пустое тело запроса",
 			body:           "",
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "bad request",
+			expectedBody:   http.StatusText(http.StatusBadRequest),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
+
+			var logBuf bytes.Buffer
+			logger := newTestLogger(&logBuf)
+
+			repo := repository.NewURLRepository("")
+			h := &URLHandler{
+				repo:    repo,
+				BaseURL: "http://localhost:8080",
+				logger:  logger,
+			}
+
+			rec := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(rec)
+
+			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.body))
+			ctx.Request = req
+
+			h.PostHandler(ctx)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			bodyBytes, _ := io.ReadAll(res.Body)
+			bodyStr := string(bodyBytes)
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if !strings.HasPrefix(bodyStr, tt.expectedBody) {
+				t.Errorf("expected body to start with %q, got %q", tt.expectedBody, bodyStr)
+			}
+		})
+	}
+}
+
+func TestGetHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := repository.NewURLRepository("")
+	repo.CreateWithID("abc123", "https://example.com")
+
+	h := &URLHandler{
+		repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  zap.NewNop(),
+	}
+
+	tests := []struct {
+		name           string
+		url            string
+		expectedStatus int
+		expectedBody   string
+		expectedLoc    string
+	}{
+		{
+			name:           "валидный короткий ID",
+			url:            "/abc123",
+			expectedStatus: http.StatusTemporaryRedirect,
+			expectedLoc:    "https://example.com",
+		},
+		{
+			name:           "несуществующий ID",
+			url:            "/nope",
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   http.StatusText(http.StatusNotFound),
+		},
+		{
+			name:           "пустой ID",
+			url:            "/",
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   http.StatusText(http.StatusBadRequest),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			c, r := gin.CreateTestContext(rec)
 
-			repo := repository.NewURLRepository()
-			h := NewURLHandler("http://localhost:8080", repo)
+			r.GET("/:id", h.GetHandler)
+			r.GET("/", h.GetHandler)
 
-			r.POST("/", h.PostHandler)
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			c.Request = req
+			r.ServeHTTP(rec, req)
 
-			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.body))
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if tt.expectedLoc != "" {
+				loc := res.Header.Get("Location")
+				if loc != tt.expectedLoc {
+					t.Errorf("expected Location %q, got %q", tt.expectedLoc, loc)
+				}
+			}
+
+			if tt.expectedBody != "" {
+				body, _ := io.ReadAll(res.Body)
+				if !strings.Contains(string(body), tt.expectedBody) {
+					t.Errorf("expected body %q, got %q", tt.expectedBody, string(body))
+				}
+			}
+		})
+	}
+}
+
+func TestShortenHandler(t *testing.T) {
+	tests := []struct {
+		name           string
+		body           string
+		expectedStatus int
+		expectedPrefix string
+	}{
+		{
+			name:           "валидный JSON",
+			body:           `{"url":"https://example.com"}`,
+			expectedStatus: http.StatusCreated,
+			expectedPrefix: "http://localhost:8080/",
+		},
+		{
+			name:           "пустой JSON",
+			body:           `{}`,
+			expectedStatus: http.StatusBadRequest,
+			expectedPrefix: `{"error":"` + http.StatusText(http.StatusBadRequest) + `"}`,
+		},
+		{
+			name:           "невалидный JSON",
+			body:           `invalid`,
+			expectedStatus: http.StatusBadRequest,
+			expectedPrefix: `{"error":"` + http.StatusText(http.StatusBadRequest) + `"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+
+			var logBuf bytes.Buffer
+			logger := newTestLogger(&logBuf)
+
+			repo := repository.NewURLRepository("")
+			h := &URLHandler{
+				repo:    repo,
+				BaseURL: "http://localhost:8080",
+				logger:  logger,
+			}
+
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+			r.POST("/api/shorten", h.ShortenHandler)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
 			c.Request = req
 
 			r.ServeHTTP(rec, req)
@@ -174,8 +218,22 @@ func TestURLHandler_PostHandler(t *testing.T) {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
 			}
 
-			if !strings.HasPrefix(bodyStr, tt.expectedBody) {
-				t.Errorf("expected body to start with %q, got %q", tt.expectedBody, bodyStr)
+			if tt.expectedStatus == http.StatusCreated {
+				var resp model.ShortenResponse
+				if err := json.Unmarshal(bodyBytes, &resp); err != nil {
+					t.Fatalf("failed to unmarshal: %v", err)
+				}
+				if !strings.HasPrefix(resp.Result, tt.expectedPrefix) {
+					t.Errorf("expected prefix %q, got %q", tt.expectedPrefix, resp.Result)
+				}
+			} else {
+				if !strings.HasPrefix(bodyStr, tt.expectedPrefix) {
+					t.Errorf("expected prefix %q, got %q", tt.expectedPrefix, bodyStr)
+				}
+			}
+
+			if tt.expectedStatus >= 500 && !strings.Contains(logBuf.String(), "Error") {
+				t.Error("expected error to be logged, but log is empty")
 			}
 		})
 	}
