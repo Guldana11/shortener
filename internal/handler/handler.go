@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,17 +13,23 @@ import (
 	"go.uber.org/zap"
 )
 
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type URLHandler struct {
 	repo    *repository.URLRepository
 	BaseURL string
+	DB      Pinger
 	logger  *zap.Logger
 }
 
-func NewURLHandler(baseURL string, repo *repository.URLRepository) *URLHandler {
+func NewURLHandler(baseURL string, repo *repository.URLRepository, db Pinger) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
 		repo:    repo,
 		BaseURL: baseURL,
+		DB:      db,
 		logger:  logger,
 	}
 }
@@ -92,7 +99,21 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, resp)
 }
 
-// Проверка на наличие лишних слэшей
+// GET /ping
+func (h *URLHandler) PingHandler(c *gin.Context) {
+	if h.DB == nil {
+		c.String(http.StatusInternalServerError, "database not configured")
+		return
+	}
+
+	if err := h.DB.Ping(c); err != nil {
+		c.String(http.StatusInternalServerError, "database unreachable")
+		return
+	}
+
+	c.String(http.StatusOK, "pong")
+}
+
 func containsSlash(s string) bool {
 	for _, c := range s {
 		if c == '/' {

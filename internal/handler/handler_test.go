@@ -2,7 +2,9 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -234,6 +236,80 @@ func TestShortenHandler(t *testing.T) {
 
 			if tt.expectedStatus >= 500 && !strings.Contains(logBuf.String(), "Error") {
 				t.Error("expected error to be logged, but log is empty")
+			}
+		})
+	}
+}
+
+type Pingable interface {
+	Ping(context.Context) error
+}
+
+type mockDB struct {
+	err error
+}
+
+func (m *mockDB) Ping(ctx context.Context) error {
+	_ = ctx
+	return m.err
+}
+
+func TestPingHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		db             Pingable
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "DB не настроена",
+			db:             nil,
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "database not configured",
+		},
+		{
+			name:           "DB недоступна",
+			db:             &mockDB{err: errors.New("ping failed")},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "database unreachable",
+		},
+		{
+			name:           "Успешный ping",
+			db:             &mockDB{err: nil},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "pong",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+
+			h := &URLHandler{
+				DB:     tt.db,
+				logger: zap.NewNop(),
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+			c.Request = req
+
+			h.PingHandler(c)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			bodyBytes, _ := io.ReadAll(res.Body)
+			bodyStr := string(bodyBytes)
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if bodyStr != tt.expectedBody {
+				t.Errorf("expected body %q, got %q", tt.expectedBody, bodyStr)
 			}
 		})
 	}
