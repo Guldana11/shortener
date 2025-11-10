@@ -87,6 +87,7 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
+	c.Writer.Header().Del("Content-Encoding")
 	c.Redirect(http.StatusTemporaryRedirect, original)
 }
 
