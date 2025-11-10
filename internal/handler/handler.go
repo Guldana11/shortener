@@ -60,16 +60,6 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 		return
 	}
 
-	if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
-		var buf bytes.Buffer
-		gz := gzip.NewWriter(&buf)
-		_, _ = gz.Write([]byte(shortURL))
-		gz.Close()
-		c.Header("Content-Encoding", "gzip")
-		c.String(http.StatusCreated, buf.String())
-		return
-	}
-
 	c.String(http.StatusCreated, shortURL)
 }
 
@@ -87,9 +77,6 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	c.Writer.Header().Del("Content-Encoding")
-	c.Writer.Header().Set("Content-Length", "0")
-
 	c.Redirect(http.StatusTemporaryRedirect, original)
 }
 
@@ -103,7 +90,6 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	}
 
 	id := h.repo.Create(req.URL)
-
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
 		h.logger.Error("failed to join URL path", zap.Error(err))
@@ -116,8 +102,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
-		enc := json.NewEncoder(gz)
-		_ = enc.Encode(resp)
+		_ = json.NewEncoder(gz).Encode(resp)
 		gz.Close()
 		c.Header("Content-Encoding", "gzip")
 		c.Data(http.StatusCreated, "application/json", buf.Bytes())
