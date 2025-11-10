@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
+	"log"
 
 	"github.com/Guldana11/shortener/internal/config"
 	"github.com/Guldana11/shortener/internal/handler"
-	"github.com/Guldana11/shortener/internal/middleware"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
@@ -21,26 +19,35 @@ func main() {
 	}
 	defer logger.Sync()
 
-	repo := repository.NewURLRepository(cfg.FileStoragePath)
+	var repo repository.Repository
+	var db handler.Pinger
 
-	var db *pgxpool.Pool
 	if cfg.DatabaseDSN != "" {
-		db, err = pgxpool.New(context.Background(), cfg.DatabaseDSN)
-		if err != nil {
-			logger.Fatal("failed to connect to database", zap.Error(err))
+		pgRepo, err := repository.NewPostgresRepository(cfg.DatabaseDSN)
+		if err == nil {
+			repo = pgRepo
+			db = pgRepo
+		} else {
+			log.Printf("failed to connect to DB: %v, fallback to file/memory", err)
 		}
-		logger.Info("Connected to PostgreSQL")
+	}
+
+	if repo == nil && cfg.FileStoragePath != "" {
+		repo = repository.NewURLRepository(cfg.FileStoragePath)
+	}
+
+	if repo == nil {
+		repo = repository.NewURLRepository("")
 	}
 
 	h := handler.NewURLHandler(cfg.BaseURL, repo, db)
 
-	r := setupRouter(h, logger)
+	r := setupRouter(h)
 
 	logger.Info("Server is starting...",
 		zap.String("address", cfg.Address),
 		zap.String("baseURL", cfg.BaseURL),
 		zap.String("storageFile", cfg.FileStoragePath),
-		zap.String("databaseDSN", cfg.DatabaseDSN),
 	)
 
 	if err := r.Run(cfg.Address); err != nil {
@@ -48,17 +55,14 @@ func main() {
 	}
 }
 
-func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
+func setupRouter(h *handler.URLHandler) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.LoggerMiddleware(logger))
-	r.Use(middleware.GzipMiddleware())
-
-	r.GET("/ping", h.PingHandler)
 
 	r.POST("/", h.PostHandler)
 	r.GET("/:id", h.GetHandler)
 	r.POST("/api/shorten", h.ShortenHandler)
+	r.GET("/ping", h.PingHandler)
 
 	return r
 }

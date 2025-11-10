@@ -18,13 +18,13 @@ type Pinger interface {
 }
 
 type URLHandler struct {
-	repo    *repository.URLRepository
+	repo    repository.Repository
 	BaseURL string
 	DB      Pinger
 	logger  *zap.Logger
 }
 
-func NewURLHandler(baseURL string, repo *repository.URLRepository, db Pinger) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository, db Pinger) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
 		repo:    repo,
