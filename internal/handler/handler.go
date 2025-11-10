@@ -88,6 +88,8 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 	}
 
 	c.Writer.Header().Del("Content-Encoding")
+	c.Writer.Header().Set("Content-Length", "0")
+
 	c.Redirect(http.StatusTemporaryRedirect, original)
 }
 
