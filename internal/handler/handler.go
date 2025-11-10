@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
@@ -57,6 +60,16 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 		return
 	}
 
+	if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		_, _ = gz.Write([]byte(shortURL))
+		gz.Close()
+		c.Header("Content-Encoding", "gzip")
+		c.String(http.StatusCreated, buf.String())
+		return
+	}
+
 	c.String(http.StatusCreated, shortURL)
 }
 
@@ -96,6 +109,18 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	}
 
 	resp := model.ShortenResponse{Result: shortURL}
+
+	if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		enc := json.NewEncoder(gz)
+		_ = enc.Encode(resp)
+		gz.Close()
+		c.Header("Content-Encoding", "gzip")
+		c.Data(http.StatusCreated, "application/json", buf.Bytes())
+		return
+	}
+
 	c.JSON(http.StatusCreated, resp)
 }
 
