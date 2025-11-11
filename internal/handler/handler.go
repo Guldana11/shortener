@@ -18,18 +18,16 @@ type Pinger interface {
 }
 
 type URLHandler struct {
-	repo    *repository.URLRepository
+	Repo    repository.Repository
 	BaseURL string
-	DB      Pinger
 	logger  *zap.Logger
 }
 
-func NewURLHandler(baseURL string, repo *repository.URLRepository, db Pinger) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
-		repo:    repo,
+		Repo:    repo,
 		BaseURL: baseURL,
-		DB:      db,
 		logger:  logger,
 	}
 }
@@ -48,7 +46,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	}
 
 	originalURL := string(body)
-	id := h.repo.Create(originalURL)
+	id := h.Repo.Create(originalURL)
 
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
@@ -68,7 +66,7 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	original, ok := h.repo.Get(id)
+	original, ok := h.Repo.Get(id)
 	if !ok {
 		c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 		return
@@ -86,7 +84,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	id := h.repo.Create(req.URL)
+	id := h.Repo.Create(req.URL)
 
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
@@ -101,16 +99,10 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 
 // GET /ping
 func (h *URLHandler) PingHandler(c *gin.Context) {
-	if h.DB == nil {
-		c.String(http.StatusInternalServerError, "database not configured")
-		return
-	}
-
-	if err := h.DB.Ping(c); err != nil {
+	if err := h.Repo.Ping(c); err != nil {
 		c.String(http.StatusInternalServerError, "database unreachable")
 		return
 	}
-
 	c.String(http.StatusOK, "pong")
 }
 

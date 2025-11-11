@@ -15,34 +15,30 @@ import (
 func main() {
 	cfg := config.Init()
 
-	logger, err := zap.NewProduction()
-	if err != nil {
-		panic("failed to initialize logger: " + err.Error())
-	}
+	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	repo := repository.NewURLRepository(cfg.FileStoragePath)
+	var repo repository.Repository
 
-	var db *pgxpool.Pool
 	if cfg.DatabaseDSN != "" {
-		db, err = pgxpool.New(context.Background(), cfg.DatabaseDSN)
+		db, err := pgxpool.New(context.Background(), cfg.DatabaseDSN)
 		if err != nil {
 			logger.Fatal("failed to connect to database", zap.Error(err))
 		}
-		logger.Info("Connected to PostgreSQL")
+		repo = repository.NewPostgresRepository(db)
+		logger.Info("Using PostgreSQL storage")
+	} else if cfg.FileStoragePath != "" {
+		repo = repository.NewURLRepository(cfg.FileStoragePath)
+		logger.Info("Using file storage", zap.String("file", cfg.FileStoragePath))
+	} else {
+		repo = repository.NewURLRepository("")
+		logger.Info("Using in-memory storage")
 	}
 
-	h := handler.NewURLHandler(cfg.BaseURL, repo, db)
-
+	h := handler.NewURLHandler(cfg.BaseURL, repo)
 	r := setupRouter(h, logger)
 
-	logger.Info("Server is starting...",
-		zap.String("address", cfg.Address),
-		zap.String("baseURL", cfg.BaseURL),
-		zap.String("storageFile", cfg.FileStoragePath),
-		zap.String("databaseDSN", cfg.DatabaseDSN),
-	)
-
+	logger.Info("Server is starting...", zap.String("address", cfg.Address))
 	if err := r.Run(cfg.Address); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}
