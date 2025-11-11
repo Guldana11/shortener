@@ -24,16 +24,12 @@ func GzipMiddleware() gin.HandlerFunc {
 		if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
 			c.Writer.Header().Set("Content-Encoding", "gzip")
 			gzWriter := gzip.NewWriter(c.Writer)
-			gzw := &gzipResponseWriter{
+			defer gzWriter.Close()
+
+			c.Writer = &gzipResponseWriter{
 				ResponseWriter: c.Writer,
 				Writer:         gzWriter,
 			}
-			c.Writer = gzw
-
-			c.Next()
-
-			gzWriter.Close()
-			return
 		}
 
 		c.Next()

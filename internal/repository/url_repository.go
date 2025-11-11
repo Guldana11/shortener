@@ -14,10 +14,10 @@ type URLRepository struct {
 	file  string
 }
 
-func NewURLRepository(filePath string) *URLRepository {
+func NewURLRepository(file string) *URLRepository {
 	r := &URLRepository{
 		store: make(map[string]string),
-		file:  filePath,
+		file:  file,
 	}
 	r.loadFromFile()
 	return r
@@ -44,12 +44,12 @@ func (r *URLRepository) CreateWithID(id, originalURL string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.store[id] = originalURL
+	r.saveToFile()
 }
 
 func (r *URLRepository) Get(id string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	url, ok := r.store[id]
 	return url, ok
 }
@@ -62,7 +62,6 @@ func (r *URLRepository) saveToFile() {
 	if err != nil {
 		return
 	}
-
 	_ = os.WriteFile(r.file, data, 0644)
 }
 

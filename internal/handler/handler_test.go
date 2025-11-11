@@ -54,9 +54,9 @@ func TestPostHandler(t *testing.T) {
 
 			repo := repository.NewURLRepository("")
 			h := &URLHandler{
-				repo:    repo,
+				Repo:    repo,
 				BaseURL: "http://localhost:8080",
-				logger:  logger,
+				Logger:  logger,
 			}
 
 			rec := httptest.NewRecorder()
@@ -91,9 +91,9 @@ func TestGetHandler(t *testing.T) {
 	repo.CreateWithID("abc123", "https://example.com")
 
 	h := &URLHandler{
-		repo:    repo,
+		Repo:    repo,
 		BaseURL: "http://localhost:8080",
-		logger:  zap.NewNop(),
+		Logger:  zap.NewNop(),
 	}
 
 	tests := []struct {
@@ -195,9 +195,9 @@ func TestShortenHandler(t *testing.T) {
 
 			repo := repository.NewURLRepository("")
 			h := &URLHandler{
-				repo:    repo,
+				Repo:    repo,
 				BaseURL: "http://localhost:8080",
-				logger:  logger,
+				Logger:  logger,
 			}
 
 			rec := httptest.NewRecorder()
@@ -290,7 +290,7 @@ func TestPingHandler(t *testing.T) {
 
 			h := &URLHandler{
 				DB:     tt.db,
-				logger: zap.NewNop(),
+				Logger: zap.NewNop(),
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "/ping", nil)

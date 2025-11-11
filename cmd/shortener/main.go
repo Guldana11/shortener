@@ -21,26 +21,37 @@ func main() {
 	}
 	defer logger.Sync()
 
-	repo := repository.NewURLRepository(cfg.FileStoragePath)
+	var (
+		repo repository.Repository
+		db   *pgxpool.Pool
+	)
 
-	var db *pgxpool.Pool
 	if cfg.DatabaseDSN != "" {
 		db, err = pgxpool.New(context.Background(), cfg.DatabaseDSN)
 		if err != nil {
 			logger.Fatal("failed to connect to database", zap.Error(err))
 		}
 		logger.Info("Connected to PostgreSQL")
+		repo = repository.NewPostgresRepository(db)
 	}
 
-	h := handler.NewURLHandler(cfg.BaseURL, repo, db)
+	if repo == nil && cfg.FileStoragePath != "" {
+		repo = repository.NewURLRepository(cfg.FileStoragePath)
+		logger.Info("Using file storage", zap.String("file", cfg.FileStoragePath))
+	}
+
+	if repo == nil {
+		repo = repository.NewURLRepository("")
+		logger.Info("Using in-memory storage")
+	}
+
+	h := handler.NewURLHandler(cfg.BaseURL, repo, db, logger)
 
 	r := setupRouter(h, logger)
 
 	logger.Info("Server is starting...",
 		zap.String("address", cfg.Address),
 		zap.String("baseURL", cfg.BaseURL),
-		zap.String("storageFile", cfg.FileStoragePath),
-		zap.String("databaseDSN", cfg.DatabaseDSN),
 	)
 
 	if err := r.Run(cfg.Address); err != nil {
@@ -55,7 +66,6 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.Use(middleware.GzipMiddleware())
 
 	r.GET("/ping", h.PingHandler)
-
 	r.POST("/", h.PostHandler)
 	r.GET("/:id", h.GetHandler)
 	r.POST("/api/shorten", h.ShortenHandler)
