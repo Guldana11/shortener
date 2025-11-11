@@ -111,6 +111,59 @@ func (h *URLHandler) PingHandler(c *gin.Context) {
 	c.String(http.StatusOK, "pong")
 }
 
+// POST /api/shorten/batch
+func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
+	var req []struct {
+		CorrelationID string `json:"correlation_id"`
+		OriginalURL   string `json:"original_url"`
+	}
+
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil || len(req) == 0 {
+		h.logger.Error("failed to decode batch request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	for i, item := range req {
+		if item.OriginalURL == "" || item.CorrelationID == "" {
+			h.logger.Warn("empty URL or correlation_id in batch", zap.Int("index", i))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "each item must have correlation_id and original_url"})
+			return
+		}
+	}
+
+	type responseItem struct {
+		CorrelationID string `json:"correlation_id"`
+		ShortURL      string `json:"short_url"`
+	}
+
+	urls := make([]string, len(req))
+	for i, item := range req {
+		urls[i] = item.OriginalURL
+	}
+
+	var ids []string
+	if batchRepo, ok := h.Repo.(*repository.URLRepository); ok {
+		ids = batchRepo.BatchCreate(urls)
+	} else {
+		ids = make([]string, len(urls))
+		for i, u := range urls {
+			ids[i] = h.Repo.Create(u)
+		}
+	}
+
+	responses := make([]responseItem, len(req))
+	for i, item := range req {
+		shortURL, _ := url.JoinPath(h.BaseURL, ids[i])
+		responses[i] = responseItem{
+			CorrelationID: item.CorrelationID,
+			ShortURL:      shortURL,
+		}
+	}
+
+	c.JSON(http.StatusCreated, responses)
+}
+
 func containsSlash(s string) bool {
 	for _, c := range s {
 		if c == '/' {

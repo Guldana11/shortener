@@ -219,3 +219,79 @@ func TestPingHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestShortenBatchHandler(t *testing.T) {
+	tests := []struct {
+		name           string
+		body           string
+		expectedStatus int
+		expectedCount  int
+		expectedPrefix string
+	}{
+		{
+			name:           "успешное создание коротких ссылок",
+			body:           `[{"correlation_id":"1","original_url":"https://example.com"},{"correlation_id":"2","original_url":"https://golang.org"}]`,
+			expectedStatus: http.StatusCreated,
+			expectedCount:  2,
+			expectedPrefix: "http://localhost:8080/",
+		},
+		{
+			name:           "пустой массив",
+			body:           `[]`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "невалидный JSON",
+			body:           `invalid json`,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			logBuf := &bytes.Buffer{}
+			logger := newTestLogger(logBuf)
+
+			repo := repository.NewURLRepository("")
+			h := &URLHandler{Repo: repo, BaseURL: "http://localhost:8080", logger: logger}
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/shorten/batch", bytes.NewBufferString(tt.body))
+
+			h.ShortenBatchHandler(c)
+
+			res := rec.Result()
+			defer res.Body.Close()
+			body, _ := io.ReadAll(res.Body)
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if res.StatusCode == http.StatusCreated {
+				var resp []struct {
+					CorrelationID string `json:"correlation_id"`
+					ShortURL      string `json:"short_url"`
+				}
+				if err := json.Unmarshal(body, &resp); err != nil {
+					t.Fatalf("failed to unmarshal response: %v", err)
+				}
+
+				if len(resp) != tt.expectedCount {
+					t.Errorf("expected %d items, got %d", tt.expectedCount, len(resp))
+				}
+
+				for _, item := range resp {
+					if !strings.HasPrefix(item.ShortURL, tt.expectedPrefix) {
+						t.Errorf("expected short URL to start with %q, got %q", tt.expectedPrefix, item.ShortURL)
+					}
+					if item.CorrelationID == "" {
+						t.Errorf("correlation_id should not be empty")
+					}
+				}
+			}
+		})
+	}
+}

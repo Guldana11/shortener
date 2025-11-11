@@ -59,6 +59,27 @@ func (r *URLRepository) Ping(ctx context.Context) error {
 	return nil
 }
 
+func (r *URLRepository) BatchCreate(urls []string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ids := make([]string, len(urls))
+	for i, u := range urls {
+		var id string
+		for {
+			id = generateID()
+			if _, exists := r.store[id]; !exists {
+				break
+			}
+		}
+		r.store[id] = u
+		ids[i] = id
+	}
+
+	r.saveToFile()
+	return ids
+}
+
 func (r *URLRepository) saveToFile() {
 	if r.file == "" {
 		return
