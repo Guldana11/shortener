@@ -184,16 +184,23 @@ func TestPingHandler(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 	}{
-		{"DB не настроена", nil, http.StatusInternalServerError, "database unreachable"},
+		{"DB не настроена", nil, http.StatusInternalServerError, "database not configured"},
 		{"DB недоступна", &mockRepo{err: errors.New("ping failed")}, http.StatusInternalServerError, "database unreachable"},
 		{"Успешный ping", &mockRepo{err: nil}, http.StatusOK, "pong"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
-			h := &URLHandler{Repo: tt.repo, BaseURL: "http://localhost:8080", logger: zap.NewNop()}
+
+			h := &URLHandler{
+				Repo:    tt.repo,
+				BaseURL: "http://localhost:8080",
+				logger:  zap.NewNop(),
+			}
+
 			req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 			c.Request = req
 
@@ -202,6 +209,7 @@ func TestPingHandler(t *testing.T) {
 			res := rec.Result()
 			defer res.Body.Close()
 			body, _ := io.ReadAll(res.Body)
+
 			if res.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
 			}

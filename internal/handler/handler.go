@@ -99,6 +99,11 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 
 // GET /ping
 func (h *URLHandler) PingHandler(c *gin.Context) {
+	if h.Repo == nil {
+		c.String(http.StatusInternalServerError, "database not configured")
+		return
+	}
+
 	if err := h.Repo.Ping(c); err != nil {
 		c.String(http.StatusInternalServerError, "database unreachable")
 		return
