@@ -52,13 +52,12 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 
 	id, err := h.Repo.Create(originalURL)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if errors.Is(err, repository.ErrURLExists) {
 			shortURL, _ := url.JoinPath(h.BaseURL, id)
 			c.String(http.StatusConflict, shortURL)
 			return
 		}
-
+		h.logger.Error("failed to create URL", zap.Error(err))
 		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
 	}
@@ -101,8 +100,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 
 	id, err := h.Repo.Create(req.URL)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if errors.Is(err, repository.ErrURLExists) {
 			shortURL, _ := url.JoinPath(h.BaseURL, id)
 			c.JSON(http.StatusConflict, model.ShortenResponse{
 				Result: shortURL,
@@ -110,6 +108,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 			return
 		}
 
+		h.logger.Error("failed to create URL", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
 		return
 	}

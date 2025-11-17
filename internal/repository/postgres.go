@@ -34,17 +34,15 @@ func (r *PostgresRepository) Create(originalURL string) (string, error) {
 		"INSERT INTO urls (id, original_url) VALUES ($1, $2)",
 		id, originalURL,
 	)
-
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			existingID, ok := r.getIDByOriginal(originalURL)
 			if ok {
-				return existingID, pgErr
+				return existingID, ErrURLExists
 			}
-			return "", pgErr
+			return "", ErrURLExists
 		}
-
 		return "", err
 	}
 
