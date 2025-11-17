@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,6 +11,8 @@ import (
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	"go.uber.org/zap"
 )
 
@@ -46,7 +49,19 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	}
 
 	originalURL := string(body)
-	id := h.Repo.Create(originalURL)
+
+	id, err := h.Repo.Create(originalURL)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			c.String(http.StatusConflict, shortURL)
+			return
+		}
+
+		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
 
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
@@ -84,7 +99,20 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	id := h.Repo.Create(req.URL)
+	id, err := h.Repo.Create(req.URL)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			c.JSON(http.StatusConflict, model.ShortenResponse{
+				Result: shortURL,
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+		return
+	}
 
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
@@ -93,8 +121,9 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	resp := model.ShortenResponse{Result: shortURL}
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, model.ShortenResponse{
+		Result: shortURL,
+	})
 }
 
 // GET /ping
@@ -137,24 +166,21 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 		ShortURL      string `json:"short_url"`
 	}
 
-	urls := make([]string, len(req))
-	for i, item := range req {
-		urls[i] = item.OriginalURL
-	}
-
-	var ids []string
-	if batchRepo, ok := h.Repo.(*repository.URLRepository); ok {
-		ids = batchRepo.BatchCreate(urls)
-	} else {
-		ids = make([]string, len(urls))
-		for i, u := range urls {
-			ids[i] = h.Repo.Create(u)
-		}
-	}
-
 	responses := make([]responseItem, len(req))
+
 	for i, item := range req {
-		shortURL, _ := url.JoinPath(h.BaseURL, ids[i])
+		id, err := h.Repo.Create(item.OriginalURL)
+
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save URL"})
+				return
+			}
+		}
+
+		shortURL, _ := url.JoinPath(h.BaseURL, id)
 		responses[i] = responseItem{
 			CorrelationID: item.CorrelationID,
 			ShortURL:      shortURL,

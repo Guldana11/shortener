@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -42,9 +43,10 @@ func TestURLRepository_Create(t *testing.T) {
 		originalURL string
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
+		name    string
+		fields  fields
+		args    args
+		wantErr error
 	}{
 		{
 			name: "Создание нового URL",
@@ -54,6 +56,19 @@ func TestURLRepository_Create(t *testing.T) {
 			args: args{
 				originalURL: "https://example.com",
 			},
+			wantErr: nil,
+		},
+		{
+			name: "URL уже существует",
+			fields: fields{
+				store: map[string]string{
+					"abcd1234": "https://example.com",
+				},
+			},
+			args: args{
+				originalURL: "https://example.com",
+			},
+			wantErr: ErrURLExists,
 		},
 	}
 
@@ -64,7 +79,16 @@ func TestURLRepository_Create(t *testing.T) {
 				mu:    sync.RWMutex{},
 			}
 
-			id := r.Create(tt.args.originalURL)
+			id, err := r.Create(tt.args.originalURL)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ожидали ошибку %v, получили %v", tt.wantErr, err)
+			}
+
+			if tt.wantErr != nil {
+				return
+			}
+
 			if id == "" {
 				t.Error("Create вернул пустой ID")
 			}

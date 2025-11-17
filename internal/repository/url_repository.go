@@ -3,11 +3,14 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
 )
+
+var ErrURLExists = errors.New("url already exists")
 
 type URLRepository struct {
 	store map[string]string
@@ -24,9 +27,15 @@ func NewURLRepository(filePath string) *URLRepository {
 	return r
 }
 
-func (r *URLRepository) Create(originalURL string) string {
+func (r *URLRepository) Create(originalURL string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	for existingID, url := range r.store {
+		if url == originalURL {
+			return existingID, ErrURLExists
+		}
+	}
 
 	var id string
 	for {
@@ -38,7 +47,7 @@ func (r *URLRepository) Create(originalURL string) string {
 
 	r.store[id] = originalURL
 	r.saveToFile()
-	return id
+	return id, nil
 }
 
 func (r *URLRepository) CreateWithID(id, originalURL string) {

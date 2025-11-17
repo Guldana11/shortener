@@ -14,7 +14,6 @@ import (
 
 func main() {
 	cfg := config.Init()
-
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 

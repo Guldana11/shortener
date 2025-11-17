@@ -54,17 +54,21 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id := repo.Create(tt.originalURL)
+
+			id, err := repo.Create(tt.originalURL)
+			if err != nil {
+				t.Fatalf("Create вернул ошибку: %v", err)
+			}
 			if id == "" {
 				t.Fatal("Create вернул пустой ID")
 			}
 
 			got, ok := repo.Get(id)
 			if !ok {
-				t.Fatal("Get не вернул URL")
+				t.Fatalf("Get не нашёл URL по ID %s", id)
 			}
 			if got != tt.originalURL {
-				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
+				t.Fatalf("ожидали %v, получили %v", tt.originalURL, got)
 			}
 		})
 	}
