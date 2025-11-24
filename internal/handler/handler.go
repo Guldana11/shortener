@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -9,19 +11,25 @@ import (
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	"go.uber.org/zap"
 )
 
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type URLHandler struct {
-	repo    *repository.URLRepository
+	Repo    repository.Repository
 	BaseURL string
 	logger  *zap.Logger
 }
 
-func NewURLHandler(baseURL string, repo *repository.URLRepository) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
-		repo:    repo,
+		Repo:    repo,
 		BaseURL: baseURL,
 		logger:  logger,
 	}
@@ -41,7 +49,18 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	}
 
 	originalURL := string(body)
-	id := h.repo.Create(originalURL)
+
+	id, err := h.Repo.Create(originalURL)
+	if err != nil {
+		if errors.Is(err, repository.ErrURLExists) {
+			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			c.String(http.StatusConflict, shortURL)
+			return
+		}
+		h.logger.Error("failed to create URL", zap.Error(err))
+		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
 
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
@@ -61,7 +80,7 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	original, ok := h.repo.Get(id)
+	original, ok := h.Repo.Get(id)
 	if !ok {
 		c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 		return
@@ -79,7 +98,20 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	id := h.repo.Create(req.URL)
+	id, err := h.Repo.Create(req.URL)
+	if err != nil {
+		if errors.Is(err, repository.ErrURLExists) {
+			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			c.JSON(http.StatusConflict, model.ShortenResponse{
+				Result: shortURL,
+			})
+			return
+		}
+
+		h.logger.Error("failed to create URL", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+		return
+	}
 
 	shortURL, err := url.JoinPath(h.BaseURL, id)
 	if err != nil {
@@ -88,11 +120,75 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	resp := model.ShortenResponse{Result: shortURL}
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, model.ShortenResponse{
+		Result: shortURL,
+	})
 }
 
-// Проверка на наличие лишних слэшей
+// GET /ping
+func (h *URLHandler) PingHandler(c *gin.Context) {
+	if h.Repo == nil {
+		c.String(http.StatusInternalServerError, "database not configured")
+		return
+	}
+
+	if err := h.Repo.Ping(c); err != nil {
+		c.String(http.StatusInternalServerError, "database unreachable")
+		return
+	}
+	c.String(http.StatusOK, "pong")
+}
+
+// POST /api/shorten/batch
+func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
+	var req []struct {
+		CorrelationID string `json:"correlation_id"`
+		OriginalURL   string `json:"original_url"`
+	}
+
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil || len(req) == 0 {
+		h.logger.Error("failed to decode batch request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	for i, item := range req {
+		if item.OriginalURL == "" || item.CorrelationID == "" {
+			h.logger.Warn("empty URL or correlation_id in batch", zap.Int("index", i))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "each item must have correlation_id and original_url"})
+			return
+		}
+	}
+
+	type responseItem struct {
+		CorrelationID string `json:"correlation_id"`
+		ShortURL      string `json:"short_url"`
+	}
+
+	responses := make([]responseItem, len(req))
+
+	for i, item := range req {
+		id, err := h.Repo.Create(item.OriginalURL)
+
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save URL"})
+				return
+			}
+		}
+
+		shortURL, _ := url.JoinPath(h.BaseURL, id)
+		responses[i] = responseItem{
+			CorrelationID: item.CorrelationID,
+			ShortURL:      shortURL,
+		}
+	}
+
+	c.JSON(http.StatusCreated, responses)
+}
+
 func containsSlash(s string) bool {
 	for _, c := range s {
 		if c == '/' {

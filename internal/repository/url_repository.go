@@ -1,12 +1,16 @@
 package repository
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
 )
+
+var ErrURLExists = errors.New("url already exists")
 
 type URLRepository struct {
 	store map[string]string
@@ -23,9 +27,15 @@ func NewURLRepository(filePath string) *URLRepository {
 	return r
 }
 
-func (r *URLRepository) Create(originalURL string) string {
+func (r *URLRepository) Create(originalURL string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	for existingID, url := range r.store {
+		if url == originalURL {
+			return existingID, ErrURLExists
+		}
+	}
 
 	var id string
 	for {
@@ -37,21 +47,46 @@ func (r *URLRepository) Create(originalURL string) string {
 
 	r.store[id] = originalURL
 	r.saveToFile()
-	return id
+	return id, nil
 }
 
 func (r *URLRepository) CreateWithID(id, originalURL string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.store[id] = originalURL
+	r.saveToFile()
 }
 
 func (r *URLRepository) Get(id string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	url, ok := r.store[id]
 	return url, ok
+}
+
+func (r *URLRepository) Ping(ctx context.Context) error {
+	return nil
+}
+
+func (r *URLRepository) BatchCreate(urls []string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ids := make([]string, len(urls))
+	for i, u := range urls {
+		var id string
+		for {
+			id = generateID()
+			if _, exists := r.store[id]; !exists {
+				break
+			}
+		}
+		r.store[id] = u
+		ids[i] = id
+	}
+
+	r.saveToFile()
+	return ids
 }
 
 func (r *URLRepository) saveToFile() {
@@ -62,7 +97,6 @@ func (r *URLRepository) saveToFile() {
 	if err != nil {
 		return
 	}
-
 	_ = os.WriteFile(r.file, data, 0644)
 }
 
