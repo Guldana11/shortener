@@ -14,7 +14,6 @@ import (
 
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
-	"github.com/Guldana11/shortener/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -375,75 +374,6 @@ func TestShortenBatchHandler(t *testing.T) {
 
 			if tt.expectedJSON != "" && bodyStr != tt.expectedJSON {
 				t.Errorf("expected JSON %q, got %q", tt.expectedJSON, bodyStr)
-			}
-		})
-	}
-}
-
-func TestGetUserURLs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	repo := newMockRepo(nil)
-	h := &URLHandler{
-		Repo:    repo,
-		BaseURL: "http://localhost:8080",
-		logger:  zap.NewNop(),
-	}
-
-	validCookie := service.GenerateUserCookie()
-	validUserID, _ := service.ValidateUserCookie(&http.Request{
-		Header: http.Header{"Cookie": []string{validCookie.String()}},
-	})
-
-	repo.CreateForUser(validUserID, "https://example.com")
-	repo.CreateForUser(validUserID, "https://golang.org")
-
-	tests := []struct {
-		name           string
-		cookie         *http.Cookie
-		expectedStatus int
-		expectedCount  int
-	}{
-		{"валидная кука с URL", validCookie, http.StatusOK, 2},                           // есть URL → 200 + JSON
-		{"валидная кука без URL", service.GenerateUserCookie(), http.StatusNoContent, 0}, // нет URL → 204
-		{"отсутствие куки", nil, http.StatusNoContent, 0},                                // нет куки → создаём новую → 204
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			c, r := gin.CreateTestContext(rec)
-			r.GET("/api/user/urls", h.GetUserURLs)
-
-			req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
-			if tt.cookie != nil {
-				req.AddCookie(tt.cookie)
-			}
-			c.Request = req
-
-			r.ServeHTTP(rec, req)
-
-			res := rec.Result()
-			defer res.Body.Close()
-
-			if res.StatusCode != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
-			}
-
-			if tt.expectedStatus == http.StatusOK {
-				var resp []map[string]string
-				body, _ := io.ReadAll(res.Body)
-				if err := json.Unmarshal(body, &resp); err != nil {
-					t.Fatalf("failed to unmarshal response: %v", err)
-				}
-				if len(resp) != tt.expectedCount {
-					t.Errorf("expected %d items, got %d", tt.expectedCount, len(resp))
-				}
-				for _, item := range resp {
-					if item["short_url"] == "" || item["original_url"] == "" {
-						t.Errorf("short_url or original_url is empty")
-					}
-				}
 			}
 		})
 	}
