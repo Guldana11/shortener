@@ -194,8 +194,9 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36]
 	}
 
 	urls := h.Repo.GetAllForUser(userID)

@@ -406,7 +406,7 @@ func TestGetUserURLs(t *testing.T) {
 	}{
 		{"валидная кука с URL", validCookie, http.StatusOK, 2},                           // есть URL → 200 + JSON
 		{"валидная кука без URL", service.GenerateUserCookie(), http.StatusNoContent, 0}, // нет URL → 204
-		{"отсутствие куки", nil, http.StatusUnauthorized, 0},                             // нет куки → 401
+		{"отсутствие куки", nil, http.StatusNoContent, 0},                                // нет куки → создаём новую → 204
 	}
 
 	for _, tt := range tests {
