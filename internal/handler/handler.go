@@ -38,6 +38,13 @@ func NewURLHandler(baseURL string, repo repository.Repository) *URLHandler {
 
 // POST /
 func (h *URLHandler) PostHandler(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36] // UUID без дефисов
+	}
+
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		h.logger.Error("failed to read request body", zap.Error(err))
@@ -51,7 +58,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 
 	originalURL := string(body)
 
-	id, err := h.Repo.Create(originalURL)
+	id, err := h.Repo.CreateForUser(userID, originalURL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
 			shortURL, _ := url.JoinPath(h.BaseURL, id)
@@ -92,6 +99,14 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 
 // POST /api/shorten
 func (h *URLHandler) ShortenHandler(c *gin.Context) {
+	// Получаем userID
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36]
+	}
+
 	var req model.ShortenRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil || req.URL == "" {
 		h.logger.Error("failed to decode JSON or missing URL", zap.Error(err))
@@ -99,7 +114,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	id, err := h.Repo.Create(req.URL)
+	id, err := h.Repo.CreateForUser(userID, req.URL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
 			shortURL, _ := url.JoinPath(h.BaseURL, id)
@@ -142,6 +157,13 @@ func (h *URLHandler) PingHandler(c *gin.Context) {
 
 // POST /api/shorten/batch
 func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36]
+	}
+
 	var req []struct {
 		CorrelationID string `json:"correlation_id"`
 		OriginalURL   string `json:"original_url"`
@@ -169,7 +191,7 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	responses := make([]responseItem, len(req))
 
 	for i, item := range req {
-		id, err := h.Repo.Create(item.OriginalURL)
+		id, err := h.Repo.CreateForUser(userID, item.OriginalURL)
 
 		if err != nil {
 			var pgErr *pgconn.PgError
@@ -196,13 +218,15 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
-		c.JSON(http.StatusOK, []interface{}{})
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		c.Status(http.StatusNoContent)
 		return
 	}
 
 	urls := h.Repo.GetAllForUser(userID)
 	if len(urls) == 0 {
-		c.JSON(http.StatusOK, []interface{}{})
+		c.Status(http.StatusNoContent)
 		return
 	}
 
@@ -222,6 +246,7 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
 func containsSlash(s string) bool {
 	for _, c := range s {
 		if c == '/' {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -377,4 +378,194 @@ func TestShortenBatchHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetUserURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMockRepo(nil)
+	h := &URLHandler{
+		Repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  zap.NewNop(),
+	}
+
+	// Создаем валидную куку для тестирования
+	validCookie := service.GenerateUserCookie()
+	validUserID, _ := service.ValidateUserCookie(&http.Request{
+		Header: http.Header{"Cookie": []string{validCookie.String()}},
+	})
+
+	// Создаем URL для пользователя
+	repo.CreateForUser(validUserID, "https://example.com")
+	repo.CreateForUser(validUserID, "https://golang.org")
+
+	tests := []struct {
+		name           string
+		cookie         *http.Cookie
+		expectedStatus int
+		expectedCount  int
+		checkCookie    bool
+	}{
+		{
+			name:           "валидная кука с URL",
+			cookie:         validCookie,
+			expectedStatus: http.StatusOK,
+			expectedCount:  2,
+			checkCookie:    false,
+		},
+		{
+			name:           "валидная кука без URL",
+			cookie:         service.GenerateUserCookie(),
+			expectedStatus: http.StatusNoContent,
+			expectedCount:  0,
+			checkCookie:    false,
+		},
+		{
+			name:           "отсутствие куки",
+			cookie:         nil,
+			expectedStatus: http.StatusNoContent,
+			expectedCount:  0,
+			checkCookie:    true, // Проверяем, что кука устанавливается
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+			r.GET("/api/user/urls", h.GetUserURLs)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
+			if tt.cookie != nil {
+				req.AddCookie(tt.cookie)
+			}
+			c.Request = req
+
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			// Проверяем статус код
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			// Проверяем Content-Type
+			contentType := res.Header.Get("Content-Type")
+			if contentType != "application/json" {
+				t.Errorf("expected Content-Type 'application/json', got '%s'", contentType)
+			}
+
+			// Проверяем установку куки при отсутствии
+			if tt.checkCookie {
+				cookies := res.Cookies()
+				if len(cookies) == 0 {
+					t.Error("expected cookie to be set, but no cookies found")
+				}
+			}
+
+			// Проверяем тело ответа для успешного случая
+			if tt.expectedStatus == http.StatusOK {
+				var resp []struct {
+					ShortURL    string `json:"short_url"`
+					OriginalURL string `json:"original_url"`
+				}
+				body, _ := io.ReadAll(res.Body)
+				if err := json.Unmarshal(body, &resp); err != nil {
+					t.Fatalf("failed to unmarshal response: %v", err)
+				}
+				if len(resp) != tt.expectedCount {
+					t.Errorf("expected %d items, got %d", tt.expectedCount, len(resp))
+				}
+				for _, item := range resp {
+					if item.ShortURL == "" || item.OriginalURL == "" {
+						t.Errorf("short_url or original_url is empty")
+					}
+					if !strings.HasPrefix(item.ShortURL, "http://localhost:8080/") {
+						t.Errorf("short_url has wrong prefix: %s", item.ShortURL)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestPostHandlerWithUserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logBuf := &bytes.Buffer{}
+	logger := newTestLogger(logBuf)
+	repo := newMockRepo(nil)
+
+	h := &URLHandler{
+		Repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  logger,
+	}
+
+	t.Run("создание URL с userID", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("https://example.com"))
+
+		h.PostHandler(c)
+
+		res := rec.Result()
+		defer res.Body.Close()
+
+		// Проверяем, что кука установлена
+		cookies := res.Cookies()
+		if len(cookies) == 0 {
+			t.Error("expected cookie to be set")
+		}
+
+		// Проверяем статус код
+		if res.StatusCode != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, res.StatusCode)
+		}
+
+		// Проверяем, что URL сохранился для пользователя
+		userID, _ := service.ValidateUserCookie(&http.Request{
+			Header: http.Header{"Cookie": []string{cookies[0].String()}},
+		})
+		urls := repo.GetAllForUser(userID)
+		if len(urls) == 0 {
+			t.Error("expected URLs to be saved for user")
+		}
+	})
+}
+
+func TestShortenHandlerWithUserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logBuf := &bytes.Buffer{}
+	logger := newTestLogger(logBuf)
+	repo := newMockRepo(nil)
+
+	h := &URLHandler{Repo: repo, BaseURL: "http://localhost:8080", logger: logger}
+
+	t.Run("создание URL с userID через JSON", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		router := gin.Default()
+		router.POST("/api/shorten", h.ShortenHandler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBufferString(`{"url":"https://example.com"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		router.ServeHTTP(rec, req)
+
+		res := rec.Result()
+		defer res.Body.Close()
+
+		// Проверяем, что кука установлена
+		cookies := res.Cookies()
+		if len(cookies) == 0 {
+			t.Error("expected cookie to be set")
+		}
+
+		// Проверяем статус код
+		if res.StatusCode != http.StatusCreated {
+			t.Errorf("expected status %d, got %d", http.StatusCreated, res.StatusCode)
+		}
+	})
 }
