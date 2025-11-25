@@ -389,11 +389,13 @@ func TestGetUserURLs(t *testing.T) {
 		logger:  zap.NewNop(),
 	}
 
-	cookie := service.GenerateUserCookie()
-	userID, _ := service.ValidateUserCookie(&http.Request{Header: http.Header{"Cookie": []string{cookie.String()}}})
+	validCookie := service.GenerateUserCookie()
+	validUserID, _ := service.ValidateUserCookie(&http.Request{
+		Header: http.Header{"Cookie": []string{validCookie.String()}},
+	})
 
-	repo.CreateForUser(userID, "https://example.com")
-	repo.CreateForUser(userID, "https://golang.org")
+	repo.CreateForUser(validUserID, "https://example.com")
+	repo.CreateForUser(validUserID, "https://golang.org")
 
 	tests := []struct {
 		name           string
@@ -401,7 +403,7 @@ func TestGetUserURLs(t *testing.T) {
 		expectedStatus int
 		expectedCount  int
 	}{
-		{"валидная кука с URL", cookie, http.StatusOK, 2},
+		{"валидная кука с URL", validCookie, http.StatusOK, 2},
 		{"валидная кука без URL", service.GenerateUserCookie(), http.StatusNoContent, 0},
 		{"отсутствие куки", nil, http.StatusUnauthorized, 0},
 	}
