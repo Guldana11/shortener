@@ -192,31 +192,36 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 
 // GET /api/user/urls
 func (h *URLHandler) GetUserURLs(c *gin.Context) {
+	c.Header("Content-Type", "application/json")
+
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
-		cookie := service.GenerateUserCookie()
-		http.SetCookie(c.Writer, cookie)
-		userID = cookie.Value[:36]
+		c.JSON(http.StatusOK, []interface{}{})
+		return
 	}
 
 	urls := h.Repo.GetAllForUser(userID)
 	if len(urls) == 0 {
-		c.Status(http.StatusNoContent)
+		c.JSON(http.StatusOK, []interface{}{})
 		return
 	}
 
-	resp := make([]map[string]string, 0, len(urls))
+	type respPair struct {
+		ShortURL    string `json:"short_url"`
+		OriginalURL string `json:"original_url"`
+	}
+
+	resp := make([]respPair, 0, len(urls))
 	for id, original := range urls {
 		shortURL, _ := url.JoinPath(h.BaseURL, id)
-		resp = append(resp, map[string]string{
-			"short_url":    shortURL,
-			"original_url": original,
+		resp = append(resp, respPair{
+			ShortURL:    shortURL,
+			OriginalURL: original,
 		})
 	}
 
 	c.JSON(http.StatusOK, resp)
 }
-
 func containsSlash(s string) bool {
 	for _, c := range s {
 		if c == '/' {
