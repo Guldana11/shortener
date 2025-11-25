@@ -109,10 +109,17 @@ func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error
 func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if r.store[userID] == nil {
-		return nil
+
+	userStore, ok := r.store[userID]
+	if !ok || len(userStore) == 0 {
+		return map[string]string{}
 	}
-	return r.store[userID]
+
+	result := make(map[string]string, len(userStore))
+	for k, v := range userStore {
+		result[k] = v
+	}
+	return result
 }
 
 func (r *URLRepository) Get(id string) (string, bool) {
