@@ -196,8 +196,7 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	if err != nil {
 		cookie := service.GenerateUserCookie()
 		http.SetCookie(c.Writer, cookie)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-		return
+		userID, _ = service.ValidateUserCookie(&http.Request{Header: http.Header{"Cookie": []string{cookie.String()}}})
 	}
 
 	urls := h.Repo.GetAllForUser(userID)

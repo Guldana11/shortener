@@ -15,6 +15,9 @@ func TestGenerateUserCookie(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := GenerateUserCookie()
+			if got == nil {
+				t.Fatal("GenerateUserCookie() returned nil") // безопасно выходим, если nil
+			}
 
 			if got.Name != cookieName {
 				t.Errorf("GenerateUserCookie() Name = %v, want %v", got.Name, cookieName)
@@ -34,7 +37,7 @@ func TestGenerateUserCookie(t *testing.T) {
 	}
 }
 
-func TestGenerateUserCookie1(t *testing.T) {
+func TestGenerateUserCookieSafety(t *testing.T) {
 	tests := []struct {
 		name string
 	}{
@@ -44,8 +47,13 @@ func TestGenerateUserCookie1(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := GenerateUserCookie()
 			if got == nil {
-				t.Error("GenerateUserCookie() returned nil")
+				t.Fatal("GenerateUserCookie() returned nil")
 			}
+
+			if got.Value == "" {
+				t.Error("GenerateUserCookie() Value is empty")
+			}
+
 			parts := strings.Split(got.Value, "|")
 			if len(parts) != 2 {
 				t.Errorf("GenerateUserCookie() Value format invalid, got: %v", got.Value)
