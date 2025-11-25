@@ -10,6 +10,7 @@ import (
 
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
@@ -187,6 +188,34 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, responses)
+}
+
+// GET /api/user/urls
+func (h *URLHandler) GetUserURLs(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	urls := h.Repo.GetAllForUser(userID)
+	if len(urls) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	resp := make([]map[string]string, 0, len(urls))
+	for id, original := range urls {
+		shortURL, _ := url.JoinPath(h.BaseURL, id)
+		resp = append(resp, map[string]string{
+			"short_url":    shortURL,
+			"original_url": original,
+		})
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func containsSlash(s string) bool {

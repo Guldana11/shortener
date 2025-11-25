@@ -7,4 +7,6 @@ type Repository interface {
 	CreateWithID(id, originalURL string)
 	Get(id string) (string, bool)
 	Ping(ctx context.Context) error
+	CreateForUser(userID, originalURL string) (string, error)
+	GetAllForUser(userID string) map[string]string
 }

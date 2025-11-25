@@ -55,6 +55,7 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.GET("/:id", h.GetHandler)
 	r.POST("/api/shorten", h.ShortenHandler)
 	r.POST("/api/shorten/batch", h.ShortenBatchHandler)
+	r.GET("/api/user/urls", h.GetUserURLs)
 
 	return r
 }

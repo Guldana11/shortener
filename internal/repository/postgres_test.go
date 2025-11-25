@@ -54,7 +54,6 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			id, err := repo.Create(tt.originalURL)
 			if err != nil {
 				t.Fatalf("Create вернул ошибку: %v", err)
@@ -103,24 +102,49 @@ func TestPostgresRepository_CreateWithID(t *testing.T) {
 	}
 }
 
+func TestPostgresRepository_CreateForUserAndGetAll(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPostgresRepository(db)
+
+	userID := "user1"
+	urls := []string{"https://a.com", "https://b.com"}
+
+	for _, u := range urls {
+		_, err := repo.CreateForUser(userID, u)
+		if err != nil {
+			t.Fatalf("CreateForUser вернул ошибку: %v", err)
+		}
+	}
+
+	all := repo.GetAllForUser(userID)
+	if len(all) != len(urls) {
+		t.Fatalf("ожидали %d URL, получили %d", len(urls), len(all))
+	}
+
+	for _, u := range urls {
+		found := false
+		for _, v := range all {
+			if v == u {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("URL %s не найден в GetAllForUser", u)
+		}
+	}
+}
+
 func TestPostgresRepository_Ping(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
-	tests := []struct {
-		name    string
-		wantErr bool
-	}{
-		{"Ping успешен", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := repo.Ping(context.Background()); (err != nil) != tt.wantErr {
-				t.Errorf("Ping() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
+	t.Run("Ping успешен", func(t *testing.T) {
+		if err := repo.Ping(context.Background()); err != nil {
+			t.Errorf("Ping() вернул ошибку: %v", err)
+		}
+	})
 }

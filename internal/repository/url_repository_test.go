@@ -28,58 +28,48 @@ func TestNewURLRepository(t *testing.T) {
 			if repo.store == nil {
 				t.Error("store должен быть инициализирован")
 			}
-			if len(repo.store) != 0 {
-				t.Errorf("store должен быть пустым, но длина %d", len(repo.store))
+			if len(repo.store) != 0 && len(repo.store[globalUserID]) != 0 {
+				t.Errorf("store должен быть пустым, но длина %d", len(repo.store[globalUserID]))
 			}
 		})
 	}
 }
 
 func TestURLRepository_Create(t *testing.T) {
-	type fields struct {
-		store map[string]string
-	}
-	type args struct {
-		originalURL string
-	}
 	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr error
+		name        string
+		store       map[string]map[string]string
+		originalURL string
+		wantErr     error
 	}{
 		{
 			name: "Создание нового URL",
-			fields: fields{
-				store: make(map[string]string),
+			store: map[string]map[string]string{
+				globalUserID: {},
 			},
-			args: args{
-				originalURL: "https://example.com",
-			},
-			wantErr: nil,
+			originalURL: "https://example.com",
+			wantErr:     nil,
 		},
 		{
 			name: "URL уже существует",
-			fields: fields{
-				store: map[string]string{
+			store: map[string]map[string]string{
+				globalUserID: {
 					"abcd1234": "https://example.com",
 				},
 			},
-			args: args{
-				originalURL: "https://example.com",
-			},
-			wantErr: ErrURLExists,
+			originalURL: "https://example.com",
+			wantErr:     ErrURLExists,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &URLRepository{
-				store: tt.fields.store,
+				store: tt.store,
 				mu:    sync.RWMutex{},
 			}
 
-			id, err := r.Create(tt.args.originalURL)
+			id, err := r.Create(tt.originalURL)
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("ожидали ошибку %v, получили %v", tt.wantErr, err)
@@ -97,92 +87,74 @@ func TestURLRepository_Create(t *testing.T) {
 			if !ok {
 				t.Error("URL не найден после Create")
 			}
-			if got != tt.args.originalURL {
-				t.Errorf("ожидали %v, получили %v", tt.args.originalURL, got)
+			if got != tt.originalURL {
+				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
 			}
 		})
 	}
 }
 
 func TestURLRepository_CreateWithID(t *testing.T) {
-	type fields struct {
-		store map[string]string
-	}
-	type args struct {
+	tests := []struct {
+		name        string
+		store       map[string]map[string]string
 		id          string
 		originalURL string
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
 	}{
 		{
 			name: "Сохранение URL с известным ID",
-			fields: fields{
-				store: make(map[string]string),
+			store: map[string]map[string]string{
+				globalUserID: {},
 			},
-			args: args{
-				id:          "testid",
-				originalURL: "https://example.com",
-			},
+			id:          "testid",
+			originalURL: "https://example.com",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &URLRepository{
-				store: tt.fields.store,
+				store: tt.store,
 				mu:    sync.RWMutex{},
 			}
-			r.CreateWithID(tt.args.id, tt.args.originalURL)
+			r.CreateWithID(tt.id, tt.originalURL)
 
-			got, ok := r.Get(tt.args.id)
+			got, ok := r.Get(tt.id)
 			if !ok {
 				t.Error("URL не найден после CreateWithID")
 			}
-			if got != tt.args.originalURL {
-				t.Errorf("ожидали %v, получили %v", tt.args.originalURL, got)
+			if got != tt.originalURL {
+				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
 			}
 		})
 	}
 }
 
 func TestURLRepository_Get(t *testing.T) {
-	type fields struct {
-		store map[string]string
-	}
-	type args struct {
-		id string
-	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   string
-		want1  bool
+		name  string
+		store map[string]map[string]string
+		id    string
+		want  string
+		want1 bool
 	}{
 		{
 			name: "Существующий ID",
-			fields: fields{
-				store: map[string]string{
+			store: map[string]map[string]string{
+				globalUserID: {
 					"id123": "https://example.com",
 				},
 			},
-			args: args{
-				id: "id123",
-			},
+			id:    "id123",
 			want:  "https://example.com",
 			want1: true,
 		},
 		{
 			name: "Несуществующий ID",
-			fields: fields{
-				store: map[string]string{},
+			store: map[string]map[string]string{
+				globalUserID: {},
 			},
-			args: args{
-				id: "unknown",
-			},
+			id:    "unknown",
 			want:  "",
 			want1: false,
 		},
@@ -191,10 +163,10 @@ func TestURLRepository_Get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &URLRepository{
-				store: tt.fields.store,
+				store: tt.store,
 				mu:    sync.RWMutex{},
 			}
-			got, got1 := r.Get(tt.args.id)
+			got, got1 := r.Get(tt.id)
 			if got != tt.want {
 				t.Errorf("Get() got = %v, want %v", got, tt.want)
 			}

@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -22,6 +24,69 @@ func newTestLogger(buf *bytes.Buffer) *zap.Logger {
 	encoder := zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig())
 	core := zapcore.NewCore(encoder, zapcore.AddSync(buf), zapcore.DebugLevel)
 	return zap.New(core)
+}
+
+type mockRepo struct {
+	err   error
+	store map[string]map[string]string // userID -> id -> URL
+}
+
+func newMockRepo(err error) *mockRepo {
+	return &mockRepo{
+		err:   err,
+		store: make(map[string]map[string]string),
+	}
+}
+
+func (m *mockRepo) Ping(ctx context.Context) error {
+	return m.err
+}
+
+func (m *mockRepo) Create(originalURL string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	id := "mockID"
+	if m.store["__global__"] == nil {
+		m.store["__global__"] = make(map[string]string)
+	}
+	m.store["__global__"][id] = originalURL
+	return id, nil
+}
+
+func (m *mockRepo) CreateWithID(id, url string) {
+	if m.store["__global__"] == nil {
+		m.store["__global__"] = make(map[string]string)
+	}
+	m.store["__global__"][id] = url
+}
+
+func (m *mockRepo) Get(id string) (string, bool) {
+	for _, urls := range m.store {
+		if url, ok := urls[id]; ok {
+			return url, true
+		}
+	}
+	return "", false
+}
+
+func (m *mockRepo) CreateForUser(userID, originalURL string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	if m.store[userID] == nil {
+		m.store[userID] = make(map[string]string)
+	}
+	id := "userID" + strconv.Itoa(len(m.store[userID])+1)
+	m.store[userID][id] = originalURL
+	return id, nil
+}
+
+func (m *mockRepo) GetAllForUser(userID string) map[string]string {
+	if m.store[userID] == nil {
+		return nil
+	}
+	return m.store[userID]
 }
 
 func TestPostHandler(t *testing.T) {
@@ -48,11 +113,10 @@ func TestPostHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
-
 			logBuf := &bytes.Buffer{}
 			logger := newTestLogger(logBuf)
+			repo := newMockRepo(nil)
 
-			repo := repository.NewURLRepository("")
 			h := &URLHandler{
 				Repo:    repo,
 				BaseURL: "http://localhost:8080",
@@ -73,7 +137,6 @@ func TestPostHandler(t *testing.T) {
 			if res.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
 			}
-
 			if tt.expectedStatus == http.StatusCreated {
 				if !strings.HasPrefix(bodyStr, tt.expectedPrefix) {
 					t.Errorf("expected prefix %q, got body %q", tt.expectedPrefix, bodyStr)
@@ -89,7 +152,7 @@ func TestPostHandler(t *testing.T) {
 
 func TestGetHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	repo := repository.NewURLRepository("")
+	repo := newMockRepo(nil)
 	repo.CreateWithID("abc123", "https://example.com")
 	h := &URLHandler{Repo: repo, BaseURL: "http://localhost:8080", logger: zap.NewNop()}
 
@@ -144,57 +207,31 @@ func TestShortenHandler(t *testing.T) {
 		expectedJSON   string
 		expectedPrefix string
 	}{
-		{
-			name:           "валидный JSON",
-			body:           `{"url":"https://example.com"}`,
-			expectedStatus: http.StatusCreated,
-			expectedPrefix: "http://localhost:8080/",
-		},
-		{
-			name:           "пустой JSON",
-			body:           `{}`,
-			expectedStatus: http.StatusBadRequest,
-			expectedJSON:   `{"error":"Bad Request"}`,
-		},
-		{
-			name:           "невалидный JSON",
-			body:           `invalid`,
-			expectedStatus: http.StatusBadRequest,
-			expectedJSON:   `{"error":"Bad Request"}`,
-		},
+		{"валидный JSON", `{"url":"https://example.com"}`, http.StatusCreated, "", "http://localhost:8080/"},
+		{"пустой JSON", `{}`, http.StatusBadRequest, `{"error":"Bad Request"}`, ""},
+		{"невалидный JSON", `invalid`, http.StatusBadRequest, `{"error":"Bad Request"}`, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
-
 			logBuf := &bytes.Buffer{}
 			logger := newTestLogger(logBuf)
+			repo := newMockRepo(nil)
 
-			repo := repository.NewURLRepository("")
-
-			h := &URLHandler{
-				Repo:    repo,
-				BaseURL: "http://localhost:8080",
-				logger:  logger,
-			}
+			h := &URLHandler{Repo: repo, BaseURL: "http://localhost:8080", logger: logger}
 
 			rec := httptest.NewRecorder()
 			router := gin.Default()
 			router.POST("/api/shorten", h.ShortenHandler)
 
-			req := httptest.NewRequest(
-				http.MethodPost,
-				"/api/shorten",
-				bytes.NewBufferString(tt.body),
-			)
+			req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 
 			router.ServeHTTP(rec, req)
 
 			res := rec.Result()
 			defer res.Body.Close()
-
 			bodyBytes, _ := io.ReadAll(res.Body)
 			bodyStr := strings.TrimSpace(string(bodyBytes))
 
@@ -213,28 +250,12 @@ func TestShortenHandler(t *testing.T) {
 				return
 			}
 
-			if tt.expectedJSON != "" {
-				if bodyStr != tt.expectedJSON {
-					t.Errorf("expected JSON %q, got %q", tt.expectedJSON, bodyStr)
-				}
+			if tt.expectedJSON != "" && bodyStr != tt.expectedJSON {
+				t.Errorf("expected JSON %q, got %q", tt.expectedJSON, bodyStr)
 			}
 		})
 	}
 }
-
-type mockRepo struct {
-	err error
-}
-
-func (m *mockRepo) Ping(ctx context.Context) error {
-	return m.err
-}
-
-func (m *mockRepo) Create(originalURL string) (string, error) {
-	return "mockID", m.err
-}
-func (m *mockRepo) CreateWithID(id, url string)  {}
-func (m *mockRepo) Get(id string) (string, bool) { return "", false }
 
 func TestPingHandler(t *testing.T) {
 	tests := []struct {
@@ -244,8 +265,8 @@ func TestPingHandler(t *testing.T) {
 		expectedBody   string
 	}{
 		{"DB не настроена", nil, http.StatusInternalServerError, "database not configured"},
-		{"DB недоступна", &mockRepo{err: errors.New("ping failed")}, http.StatusInternalServerError, "database unreachable"},
-		{"Успешный ping", &mockRepo{err: nil}, http.StatusOK, "pong"},
+		{"DB недоступна", newMockRepo(errors.New("ping failed")), http.StatusInternalServerError, "database unreachable"},
+		{"Успешный ping", newMockRepo(nil), http.StatusOK, "pong"},
 	}
 
 	for _, tt := range tests {
@@ -295,28 +316,17 @@ func TestShortenBatchHandler(t *testing.T) {
 			expectedCount:  2,
 			expectedPrefix: "http://localhost:8080/",
 		},
-		{
-			name:           "пустой массив",
-			body:           `[]`,
-			expectedStatus: http.StatusBadRequest,
-			expectedJSON:   `{"error":"invalid request body"}`,
-		},
-		{
-			name:           "невалидный JSON",
-			body:           `invalid json`,
-			expectedStatus: http.StatusBadRequest,
-			expectedJSON:   `{"error":"invalid request body"}`,
-		},
+		{"пустой массив", `[]`, http.StatusBadRequest, 0, `{"error":"invalid request body"}`, ""},
+		{"невалидный JSON", `invalid json`, http.StatusBadRequest, 0, `{"error":"invalid request body"}`, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
-
 			logBuf := &bytes.Buffer{}
 			logger := newTestLogger(logBuf)
+			repo := newMockRepo(nil)
 
-			repo := repository.NewURLRepository("")
 			h := &URLHandler{
 				Repo:    repo,
 				BaseURL: "http://localhost:8080",
@@ -334,7 +344,6 @@ func TestShortenBatchHandler(t *testing.T) {
 
 			res := rec.Result()
 			defer res.Body.Close()
-
 			bodyBytes, _ := io.ReadAll(res.Body)
 			bodyStr := strings.TrimSpace(string(bodyBytes))
 
@@ -347,15 +356,12 @@ func TestShortenBatchHandler(t *testing.T) {
 					CorrelationID string `json:"correlation_id"`
 					ShortURL      string `json:"short_url"`
 				}
-
 				if err := json.Unmarshal(bodyBytes, &resp); err != nil {
 					t.Fatalf("failed to unmarshal response: %v", err)
 				}
-
 				if len(resp) != tt.expectedCount {
 					t.Errorf("expected %d items, got %d", tt.expectedCount, len(resp))
 				}
-
 				for _, item := range resp {
 					if item.CorrelationID == "" {
 						t.Errorf("correlation_id should not be empty")
@@ -369,6 +375,72 @@ func TestShortenBatchHandler(t *testing.T) {
 
 			if tt.expectedJSON != "" && bodyStr != tt.expectedJSON {
 				t.Errorf("expected JSON %q, got %q", tt.expectedJSON, bodyStr)
+			}
+		})
+	}
+}
+
+func TestGetUserURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newMockRepo(nil)
+	h := &URLHandler{
+		Repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  zap.NewNop(),
+	}
+
+	cookie := service.GenerateUserCookie()
+	userID, _ := service.ValidateUserCookie(&http.Request{Header: http.Header{"Cookie": []string{cookie.String()}}})
+
+	repo.CreateForUser(userID, "https://example.com")
+	repo.CreateForUser(userID, "https://golang.org")
+
+	tests := []struct {
+		name           string
+		cookie         *http.Cookie
+		expectedStatus int
+		expectedCount  int
+	}{
+		{"валидная кука с URL", cookie, http.StatusOK, 2},
+		{"валидная кука без URL", service.GenerateUserCookie(), http.StatusNoContent, 0},
+		{"отсутствие куки", nil, http.StatusUnauthorized, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+			r.GET("/api/user/urls", h.GetUserURLs)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
+			if tt.cookie != nil {
+				req.AddCookie(tt.cookie)
+			}
+			c.Request = req
+
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+
+			if tt.expectedStatus == http.StatusOK {
+				var resp []map[string]string
+				body, _ := io.ReadAll(res.Body)
+				if err := json.Unmarshal(body, &resp); err != nil {
+					t.Fatalf("failed to unmarshal response: %v", err)
+				}
+				if len(resp) != tt.expectedCount {
+					t.Errorf("expected %d items, got %d", tt.expectedCount, len(resp))
+				}
+				for _, item := range resp {
+					if item["short_url"] == "" || item["original_url"] == "" {
+						t.Errorf("short_url or original_url is empty")
+					}
+				}
 			}
 		})
 	}
