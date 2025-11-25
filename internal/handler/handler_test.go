@@ -382,6 +382,7 @@ func TestShortenBatchHandler(t *testing.T) {
 
 func TestGetUserURLs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+
 	repo := newMockRepo(nil)
 	h := &URLHandler{
 		Repo:    repo,
@@ -403,9 +404,9 @@ func TestGetUserURLs(t *testing.T) {
 		expectedStatus int
 		expectedCount  int
 	}{
-		{"валидная кука с URL", validCookie, http.StatusOK, 2},
-		{"валидная кука без URL", service.GenerateUserCookie(), http.StatusNoContent, 0},
-		{"отсутствие куки", nil, http.StatusUnauthorized, 0},
+		{"валидная кука с URL", validCookie, http.StatusOK, 2},                           // есть URL → 200 + JSON
+		{"валидная кука без URL", service.GenerateUserCookie(), http.StatusNoContent, 0}, // нет URL → 204
+		{"отсутствие куки", nil, http.StatusUnauthorized, 0},                             // нет куки → 401
 	}
 
 	for _, tt := range tests {
