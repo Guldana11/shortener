@@ -18,6 +18,23 @@ type URLRepository struct {
 	file  string
 }
 
+func (r *URLRepository) MarkAsDeleted(userID string, ids []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	userStore, ok := r.store[userID]
+	if !ok {
+		return nil
+	}
+
+	for _, id := range ids {
+		delete(userStore, id)
+	}
+
+	r.saveToFile()
+	return nil
+}
+
 const globalUserID = "__global__"
 
 func NewURLRepository(filePath string) *URLRepository {
@@ -122,15 +139,17 @@ func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 	return result
 }
 
-func (r *URLRepository) Get(id string) (string, bool) {
+func (r *URLRepository) Get(id string) (string, bool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	for _, urls := range r.store {
 		if url, ok := urls[id]; ok {
-			return url, true
+			return url, true, false
 		}
 	}
-	return "", false
+
+	return "", false, false
 }
 
 func (r *URLRepository) Ping(ctx context.Context) error {

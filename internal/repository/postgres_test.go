@@ -62,9 +62,12 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 				t.Fatal("Create вернул пустой ID")
 			}
 
-			got, ok := repo.Get(id)
+			got, ok, deleted := repo.Get(id)
 			if !ok {
 				t.Fatalf("Get не нашёл URL по ID %s", id)
+			}
+			if deleted {
+				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", id)
 			}
 			if got != tt.originalURL {
 				t.Fatalf("ожидали %v, получили %v", tt.originalURL, got)
@@ -91,12 +94,15 @@ func TestPostgresRepository_CreateWithID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo.CreateWithID(tt.id, tt.originalURL)
 
-			got, ok := repo.Get(tt.id)
+			got, ok, deleted := repo.Get(tt.id)
 			if !ok {
 				t.Fatal("Get не вернул URL после CreateWithID")
 			}
 			if got != tt.originalURL {
 				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
+			}
+			if deleted {
+				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", tt.id)
 			}
 		})
 	}
@@ -147,4 +153,54 @@ func TestPostgresRepository_Ping(t *testing.T) {
 			t.Errorf("Ping() вернул ошибку: %v", err)
 		}
 	})
+}
+
+func TestPostgresRepository_MarkAsDeleted(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+	userID := "user123"
+
+	id1, _ := repo.CreateForUser(userID, "https://example.com/1")
+	id2, _ := repo.CreateForUser(userID, "https://example.com/2")
+
+	tests := []struct {
+		name   string
+		ids    []string
+		userID string
+	}{
+		{
+			name:   "Помечаем два URL как удаленные",
+			ids:    []string{id1, id2},
+			userID: userID,
+		},
+		{
+			name:   "Пустой список ID не вызывает ошибки",
+			ids:    []string{},
+			userID: userID,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := repo.MarkAsDeleted(tt.userID, tt.ids)
+			if err != nil {
+				t.Fatalf("MarkAsDeleted вернул ошибку: %v", err)
+			}
+
+			for _, id := range tt.ids {
+				got, ok, deleted := repo.Get(id)
+				if !ok {
+					t.Fatalf("Get не вернул URL с ID %s", id)
+				}
+				if got == "" {
+					t.Errorf("URL с ID %s пустой", id)
+				}
+				if !deleted {
+					t.Errorf("URL с ID %s не помечен как удалённый", id)
+				}
+			}
+		})
+	}
 }

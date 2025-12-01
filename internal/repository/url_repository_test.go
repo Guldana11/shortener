@@ -83,12 +83,15 @@ func TestURLRepository_Create(t *testing.T) {
 				t.Error("Create вернул пустой ID")
 			}
 
-			got, ok := r.Get(id)
+			got, ok, deleted := r.Get(id)
 			if !ok {
 				t.Error("URL не найден после Create")
 			}
 			if got != tt.originalURL {
 				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
+			}
+			if deleted {
+				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", id)
 			}
 		})
 	}
@@ -119,12 +122,15 @@ func TestURLRepository_CreateWithID(t *testing.T) {
 			}
 			r.CreateWithID(tt.id, tt.originalURL)
 
-			got, ok := r.Get(tt.id)
+			got, ok, deleted := r.Get(tt.id)
 			if !ok {
 				t.Error("URL не найден после CreateWithID")
 			}
 			if got != tt.originalURL {
 				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
+			}
+			if deleted {
+				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", tt.id)
 			}
 		})
 	}
@@ -166,12 +172,15 @@ func TestURLRepository_Get(t *testing.T) {
 				store: tt.store,
 				mu:    sync.RWMutex{},
 			}
-			got, got1 := r.Get(tt.id)
+			got, got1, deleted := r.Get(tt.id)
 			if got != tt.want {
 				t.Errorf("Get() got = %v, want %v", got, tt.want)
 			}
 			if got1 != tt.want1 {
 				t.Errorf("Get() got1 = %v, want %v", got1, tt.want1)
+			}
+			if deleted {
+				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", tt.id)
 			}
 		})
 	}

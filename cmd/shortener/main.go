@@ -57,5 +57,7 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.POST("/api/shorten/batch", h.ShortenBatchHandler)
 	r.GET("/api/user/urls", h.GetUserURLs)
 
+	r.DELETE("/api/user/urls", h.DeleteUserURLs)
+
 	return r
 }

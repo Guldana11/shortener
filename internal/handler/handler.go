@@ -88,9 +88,14 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	original, ok := h.Repo.Get(id)
+	original, ok, deleted := h.Repo.Get(id)
 	if !ok {
 		c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+		return
+	}
+
+	if deleted {
+		c.String(http.StatusGone, http.StatusText(http.StatusGone))
 		return
 	}
 
@@ -245,6 +250,27 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// DELETE /api/user/urls
+func (h *URLHandler) DeleteUserURLs(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		c.String(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var ids []string
+	if err := json.NewDecoder(c.Request.Body).Decode(&ids); err != nil {
+		c.String(http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	go func() {
+		_ = h.Repo.MarkAsDeleted(userID, ids)
+	}()
+
+	c.Status(http.StatusAccepted)
 }
 
 func containsSlash(s string) bool {

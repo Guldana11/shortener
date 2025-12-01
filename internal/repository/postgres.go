@@ -16,11 +16,12 @@ type PostgresRepository struct {
 
 func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 	query := `
-	CREATE TABLE IF NOT EXISTS urls (
-		id TEXT PRIMARY KEY,
-		original_url TEXT NOT NULL,
-		user_id TEXT,
-		UNIQUE(original_url, user_id)
+		CREATE TABLE IF NOT EXISTS urls (
+    		id TEXT PRIMARY KEY,
+    		original_url TEXT NOT NULL,
+    	user_id TEXT,
+    	is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    	UNIQUE(original_url, user_id)
 	);`
 	_, err := db.Exec(context.Background(), query)
 	if err != nil {
@@ -78,7 +79,7 @@ func (r *PostgresRepository) getIDByOriginalForUser(userID, originalURL string) 
 
 func (r *PostgresRepository) GetAllForUser(userID string) map[string]string {
 	rows, err := r.db.Query(context.Background(),
-		"SELECT id, original_url FROM urls WHERE user_id=$1",
+		"SELECT id, original_url FROM urls WHERE user_id=$1 AND is_deleted=FALSE",
 		userID,
 	)
 	if err != nil {
@@ -97,18 +98,37 @@ func (r *PostgresRepository) GetAllForUser(userID string) map[string]string {
 	return result
 }
 
-func (r *PostgresRepository) Get(id string) (string, bool) {
+func (r *PostgresRepository) Get(id string) (string, bool, bool) {
 	var original string
+	var isDeleted bool
+
 	err := r.db.QueryRow(context.Background(),
-		"SELECT original_url FROM urls WHERE id=$1",
+		"SELECT original_url, is_deleted FROM urls WHERE id=$1",
 		id,
-	).Scan(&original)
+	).Scan(&original, &isDeleted)
+
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
-	return original, true
+
+	return original, true, isDeleted
 }
 
 func (r *PostgresRepository) Ping(ctx context.Context) error {
 	return r.db.Ping(ctx)
+}
+
+func (r *PostgresRepository) MarkAsDeleted(userID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	query := `
+        UPDATE urls
+        SET is_deleted = TRUE
+        WHERE id = ANY($1) AND user_id = $2;
+    `
+
+	_, err := r.db.Exec(context.Background(), query, ids, userID)
+	return err
 }

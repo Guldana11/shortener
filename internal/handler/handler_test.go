@@ -31,6 +31,10 @@ type mockRepo struct {
 	store map[string]map[string]string // userID -> id -> URL
 }
 
+func (m *mockRepo) MarkAsDeleted(userID string, ids []string) error {
+	return nil
+}
+
 func newMockRepo(err error) *mockRepo {
 	return &mockRepo{
 		err:   err,
@@ -61,13 +65,13 @@ func (m *mockRepo) CreateWithID(id, url string) {
 	m.store["__global__"][id] = url
 }
 
-func (m *mockRepo) Get(id string) (string, bool) {
+func (m *mockRepo) Get(id string) (string, bool, bool) {
 	for _, urls := range m.store {
 		if url, ok := urls[id]; ok {
-			return url, true
+			return url, true, false
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 func (m *mockRepo) CreateForUser(userID, originalURL string) (string, error) {
@@ -514,18 +518,15 @@ func TestPostHandlerWithUserID(t *testing.T) {
 		res := rec.Result()
 		defer res.Body.Close()
 
-		// Проверяем, что кука установлена
 		cookies := res.Cookies()
 		if len(cookies) == 0 {
 			t.Error("expected cookie to be set")
 		}
 
-		// Проверяем статус код
 		if res.StatusCode != http.StatusCreated {
 			t.Errorf("expected status %d, got %d", http.StatusCreated, res.StatusCode)
 		}
 
-		// Проверяем, что URL сохранился для пользователя
 		userID, _ := service.ValidateUserCookie(&http.Request{
 			Header: http.Header{"Cookie": []string{cookies[0].String()}},
 		})
@@ -557,15 +558,81 @@ func TestShortenHandlerWithUserID(t *testing.T) {
 		res := rec.Result()
 		defer res.Body.Close()
 
-		// Проверяем, что кука установлена
 		cookies := res.Cookies()
 		if len(cookies) == 0 {
 			t.Error("expected cookie to be set")
 		}
 
-		// Проверяем статус код
 		if res.StatusCode != http.StatusCreated {
 			t.Errorf("expected status %d, got %d", http.StatusCreated, res.StatusCode)
 		}
 	})
+}
+
+func TestDeleteUserURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMockRepo(nil)
+	h := &URLHandler{
+		Repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  zap.NewNop(),
+	}
+
+	cookie := service.GenerateUserCookie()
+	userID, _ := service.ValidateUserCookie(&http.Request{
+		Header: http.Header{"Cookie": []string{cookie.String()}},
+	})
+
+	id1, _ := repo.CreateForUser(userID, "https://example.com")
+	id2, _ := repo.CreateForUser(userID, "https://golang.org")
+
+	tests := []struct {
+		name           string
+		cookie         *http.Cookie
+		body           string
+		expectedStatus int
+	}{
+		{
+			name:           "успешное удаление",
+			cookie:         cookie,
+			body:           `["` + id1 + `","` + id2 + `"]`,
+			expectedStatus: http.StatusAccepted,
+		},
+		{
+			name:           "без куки",
+			cookie:         nil,
+			body:           `["` + id1 + `"]`,
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "невалидный JSON",
+			cookie:         cookie,
+			body:           `invalid json`,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+			r.DELETE("/api/user/urls", h.DeleteUserURLs)
+
+			req := httptest.NewRequest(http.MethodDelete, "/api/user/urls", bytes.NewBufferString(tt.body))
+			if tt.cookie != nil {
+				req.AddCookie(tt.cookie)
+			}
+			c.Request = req
+
+			r.ServeHTTP(rec, req)
+
+			res := rec.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, res.StatusCode)
+			}
+		})
+	}
 }
