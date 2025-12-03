@@ -229,15 +229,13 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 
-	userID, err := service.ValidateUserCookie(c.Request)
-	if err != nil || userID == "" {
-		cookie := service.GenerateUserCookie()
-		http.SetCookie(c.Writer, cookie)
-		c.Status(http.StatusNoContent)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.Status(http.StatusUnauthorized)
 		return
 	}
 
-	urls := h.Repo.GetAllForUser(userID)
+	urls := h.Repo.GetAllForUser(userID.(string))
 	if len(urls) == 0 {
 		c.Status(http.StatusNoContent)
 		return
@@ -250,7 +248,11 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 
 	resp := make([]respPair, 0, len(urls))
 	for id, original := range urls {
-		shortURL, _ := url.JoinPath(h.BaseURL, id)
+		shortURL, err := url.JoinPath(h.BaseURL, id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build short URL"})
+			return
+		}
 		resp = append(resp, respPair{
 			ShortURL:    shortURL,
 			OriginalURL: original,

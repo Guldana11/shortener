@@ -83,6 +83,7 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(middleware.LoggerMiddleware(logger))
 	r.Use(middleware.GzipMiddleware())
+	r.Use(middleware.UserCookieMiddleware())
 
 	r.GET("/ping", h.PingHandler)
 
