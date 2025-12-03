@@ -13,12 +13,11 @@ func UserCookieMiddleware() gin.HandlerFunc {
 		if err != nil || userID == "" {
 			cookie := service.GenerateUserCookie()
 			http.SetCookie(c.Writer, cookie)
-			c.Status(http.StatusNoContent)
-			c.Abort()
-			return
+			userID = cookie.Value[:36]
 		}
 
 		c.Set("userID", userID)
+
 		c.Next()
 	}
 }
