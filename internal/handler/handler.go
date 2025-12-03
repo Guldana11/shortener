@@ -250,7 +250,8 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	for id, original := range urls {
 		shortURL, err := url.JoinPath(h.BaseURL, id)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build short URL"})
+			h.logger.Error("failed to build short URL", zap.Error(err), zap.String("id", id))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
 			return
 		}
 		resp = append(resp, respPair{

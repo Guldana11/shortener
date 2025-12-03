@@ -37,8 +37,6 @@ func (r *URLRepository) MarkAsDeleted(userID string, ids []string) error {
 	return nil
 }
 
-const globalUserID = "__global__"
-
 func NewURLRepository(filePath string) *URLRepository {
 	r := &URLRepository{
 		store: make(map[string]map[string]string),
@@ -49,60 +47,11 @@ func NewURLRepository(filePath string) *URLRepository {
 }
 
 func (r *URLRepository) Create(originalURL string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.store[globalUserID] == nil {
-		r.store[globalUserID] = make(map[string]string)
-	}
-
-	for id, url := range r.store[globalUserID] {
-		if url == originalURL {
-			return id, ErrURLExists
-		}
-	}
-
-	id := generateID()
-	r.store[globalUserID][id] = originalURL
-	r.saveToFile()
-	return id, nil
+	return r.CreateForUser("", originalURL)
 }
 
 func (r *URLRepository) CreateWithID(id, originalURL string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.store[globalUserID] == nil {
-		r.store[globalUserID] = make(map[string]string)
-	}
-
-	r.store[globalUserID][id] = originalURL
-	r.saveToFile()
-}
-
-func (r *URLRepository) BatchCreate(urls []string) []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.store[globalUserID] == nil {
-		r.store[globalUserID] = make(map[string]string)
-	}
-
-	ids := make([]string, len(urls))
-	for i, u := range urls {
-		var id string
-		for {
-			id = generateID()
-			if _, exists := r.store[globalUserID][id]; !exists {
-				break
-			}
-		}
-		r.store[globalUserID][id] = u
-		ids[i] = id
-	}
-
-	r.saveToFile()
-	return ids
+	_, _ = r.CreateForUser("", originalURL)
 }
 
 func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error) {
@@ -125,6 +74,31 @@ func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error
 	return id, nil
 }
 
+func (r *URLRepository) BatchCreateForUser(userID string, urls []string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.store[userID] == nil {
+		r.store[userID] = make(map[string]string)
+	}
+
+	ids := make([]string, len(urls))
+	for i, u := range urls {
+		var id string
+		for {
+			id = generateID()
+			if _, exists := r.store[userID][id]; !exists {
+				break
+			}
+		}
+		r.store[userID][id] = u
+		ids[i] = id
+	}
+
+	r.saveToFile()
+	return ids
+}
+
 func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -142,16 +116,24 @@ func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 }
 
 func (r *URLRepository) Get(id string) (string, error) {
+	return r.GetForUser("", id)
+}
+
+func (r *URLRepository) GetForUser(userID, id string) (string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for _, urls := range r.store {
-		if url, ok := urls[id]; ok {
-			return url, nil
-		}
+	userStore, ok := r.store[userID]
+	if !ok {
+		return "", model.ErrNotFound
 	}
 
-	return "", model.ErrNotFound
+	url, exists := userStore[id]
+	if !exists {
+		return "", model.ErrNotFound
+	}
+
+	return url, nil
 }
 
 func (r *URLRepository) Ping(ctx context.Context) error {

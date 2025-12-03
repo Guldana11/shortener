@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/Guldana11/shortener/internal/model"
@@ -99,13 +100,13 @@ func (r *PostgresRepository) Get(id string) (string, error) {
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", model.ErrNotFound
+			return "", fmt.Errorf("%w: %s", model.ErrNotFound, id)
 		}
 		return "", err
 	}
 
 	if isDeleted {
-		return "", model.ErrDeleted
+		return "", fmt.Errorf("%w: %s", model.ErrDeleted, id)
 	}
 
 	return original, nil

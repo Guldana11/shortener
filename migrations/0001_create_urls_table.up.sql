@@ -1,7 +1,7 @@
 CREATE TABLE urls (
-                      id TEXT PRIMARY KEY,
+                      id VARCHAR(255) PRIMARY KEY,
                       original_url TEXT NOT NULL,
-                      user_id TEXT,
+                      user_id VARCHAR(255),
                       is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
                       UNIQUE(original_url, user_id)
 );
