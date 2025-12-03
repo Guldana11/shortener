@@ -1,37 +1,20 @@
 package repository
 
 import (
-	"errors"
 	"sync"
 	"testing"
-
-	"github.com/Guldana11/shortener/internal/config"
 )
 
 func TestNewURLRepository(t *testing.T) {
-	cfg := config.Init()
-
-	tests := []struct {
-		name string
-	}{
-		{
-			name: "Создание нового репозитория",
-		},
+	repo := NewURLRepository("")
+	if repo == nil {
+		t.Fatal("NewURLRepository вернул nil")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := NewURLRepository(cfg.FileStoragePath)
-			if repo == nil {
-				t.Fatal("NewURLRepository вернул nil")
-			}
-			if repo.store == nil {
-				t.Error("store должен быть инициализирован")
-			}
-			if len(repo.store) != 0 && len(repo.store[globalUserID]) != 0 {
-				t.Errorf("store должен быть пустым, но длина %d", len(repo.store[globalUserID]))
-			}
-		})
+	if repo.store == nil {
+		t.Error("store должен быть инициализирован")
+	}
+	if len(repo.store) != 0 {
+		t.Errorf("store должен быть пустым, но длина %d", len(repo.store))
 	}
 }
 
@@ -70,8 +53,7 @@ func TestURLRepository_Create(t *testing.T) {
 			}
 
 			id, err := r.Create(tt.originalURL)
-
-			if !errors.Is(err, tt.wantErr) {
+			if err != tt.wantErr {
 				t.Fatalf("ожидали ошибку %v, получили %v", tt.wantErr, err)
 			}
 
@@ -83,105 +65,84 @@ func TestURLRepository_Create(t *testing.T) {
 				t.Error("Create вернул пустой ID")
 			}
 
-			got, ok, deleted := r.Get(id)
-			if !ok {
-				t.Error("URL не найден после Create")
+			got, err := r.Get(id)
+			if err != nil {
+				t.Errorf("URL не найден после Create: %v", err)
 			}
 			if got != tt.originalURL {
 				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
-			}
-			if deleted {
-				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", id)
 			}
 		})
 	}
 }
 
 func TestURLRepository_CreateWithID(t *testing.T) {
-	tests := []struct {
-		name        string
-		store       map[string]map[string]string
-		id          string
-		originalURL string
-	}{
-		{
-			name: "Сохранение URL с известным ID",
-			store: map[string]map[string]string{
-				globalUserID: {},
-			},
-			id:          "testid",
-			originalURL: "https://example.com",
+	r := &URLRepository{
+		store: map[string]map[string]string{
+			globalUserID: {},
 		},
+		mu: sync.RWMutex{},
 	}
+	id := "testid"
+	url := "https://example.com"
+	r.CreateWithID(id, url)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &URLRepository{
-				store: tt.store,
-				mu:    sync.RWMutex{},
-			}
-			r.CreateWithID(tt.id, tt.originalURL)
-
-			got, ok, deleted := r.Get(tt.id)
-			if !ok {
-				t.Error("URL не найден после CreateWithID")
-			}
-			if got != tt.originalURL {
-				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
-			}
-			if deleted {
-				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", tt.id)
-			}
-		})
+	got, err := r.Get(id)
+	if err != nil {
+		t.Errorf("URL не найден после CreateWithID: %v", err)
+	}
+	if got != url {
+		t.Errorf("ожидали %v, получили %v", url, got)
 	}
 }
 
 func TestURLRepository_Get(t *testing.T) {
-	tests := []struct {
-		name  string
-		store map[string]map[string]string
-		id    string
-		want  string
-		want1 bool
-	}{
-		{
-			name: "Существующий ID",
-			store: map[string]map[string]string{
-				globalUserID: {
-					"id123": "https://example.com",
-				},
+	r := &URLRepository{
+		store: map[string]map[string]string{
+			globalUserID: {
+				"id123": "https://example.com",
 			},
-			id:    "id123",
-			want:  "https://example.com",
-			want1: true,
 		},
-		{
-			name: "Несуществующий ID",
-			store: map[string]map[string]string{
-				globalUserID: {},
-			},
-			id:    "unknown",
-			want:  "",
-			want1: false,
-		},
+		mu: sync.RWMutex{},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &URLRepository{
-				store: tt.store,
-				mu:    sync.RWMutex{},
-			}
-			got, got1, deleted := r.Get(tt.id)
-			if got != tt.want {
-				t.Errorf("Get() got = %v, want %v", got, tt.want)
-			}
-			if got1 != tt.want1 {
-				t.Errorf("Get() got1 = %v, want %v", got1, tt.want1)
-			}
-			if deleted {
-				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", tt.id)
-			}
-		})
+	got, err := r.Get("id123")
+	if err != nil {
+		t.Errorf("Get() вернул ошибку для существующего ID: %v", err)
+	}
+	if got != "https://example.com" {
+		t.Errorf("Get() = %v, want %v", got, "https://example.com")
+	}
+
+	got, err = r.Get("unknown")
+	if err == nil {
+		t.Errorf("ожидали ошибку для несуществующего ID, получили nil")
+	}
+	if got != "" {
+		t.Errorf("ожидали пустую строку, получили %v", got)
+	}
+}
+
+func TestURLRepository_MarkAsDeleted(t *testing.T) {
+	r := &URLRepository{
+		store: map[string]map[string]string{
+			"user1": {
+				"id1": "https://example.com",
+				"id2": "https://example2.com",
+			},
+		},
+		mu: sync.RWMutex{},
+	}
+
+	err := r.MarkAsDeleted("user1", []string{"id1"})
+	if err != nil {
+		t.Errorf("MarkAsDeleted вернул ошибку: %v", err)
+	}
+
+	if _, err := r.Get("id1"); err == nil {
+		t.Errorf("URL id1 должен быть удалён")
+	}
+	if _, err := r.Get("id2"); err != nil {
+		t.Errorf("URL id2 не должен быть удалён: %v", err)
 	}
 }

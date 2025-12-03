@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/Guldana11/shortener/internal/model"
 )
 
 var ErrURLExists = errors.New("url already exists")
@@ -139,17 +141,17 @@ func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 	return result
 }
 
-func (r *URLRepository) Get(id string) (string, bool, bool) {
+func (r *URLRepository) Get(id string) (string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	for _, urls := range r.store {
 		if url, ok := urls[id]; ok {
-			return url, true, false
+			return url, nil
 		}
 	}
 
-	return "", false, false
+	return "", model.ErrNotFound
 }
 
 func (r *URLRepository) Ping(ctx context.Context) error {

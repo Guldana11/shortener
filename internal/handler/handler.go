@@ -21,18 +21,24 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-type URLHandler struct {
-	Repo    repository.Repository
-	BaseURL string
-	logger  *zap.Logger
+type DeleteWorkerInterface interface {
+	EnqueueDeletion(userID string, ids []string)
 }
 
-func NewURLHandler(baseURL string, repo repository.Repository) *URLHandler {
+type URLHandler struct {
+	Repo         repository.Repository
+	BaseURL      string
+	logger       *zap.Logger
+	DeleteWorker DeleteWorkerInterface
+}
+
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
-		Repo:    repo,
-		BaseURL: baseURL,
-		logger:  logger,
+		Repo:         repo,
+		BaseURL:      baseURL,
+		logger:       logger,
+		DeleteWorker: dw,
 	}
 }
 
@@ -88,14 +94,16 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	original, ok, deleted := h.Repo.Get(id)
-	if !ok {
-		c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
-		return
-	}
-
-	if deleted {
-		c.String(http.StatusGone, http.StatusText(http.StatusGone))
+	original, err := h.Repo.Get(id)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.ErrNotFound):
+			c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+		case errors.Is(err, model.ErrDeleted):
+			c.String(http.StatusGone, http.StatusText(http.StatusGone))
+		default:
+			c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		}
 		return
 	}
 
@@ -266,9 +274,7 @@ func (h *URLHandler) DeleteUserURLs(c *gin.Context) {
 		return
 	}
 
-	go func() {
-		_ = h.Repo.MarkAsDeleted(userID, ids)
-	}()
+	h.DeleteWorker.EnqueueDeletion(userID, ids)
 
 	c.Status(http.StatusAccepted)
 }

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log"
 
+	"github.com/Guldana11/shortener/internal/model"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -15,18 +17,6 @@ type PostgresRepository struct {
 }
 
 func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
-	query := `
-		CREATE TABLE IF NOT EXISTS urls (
-    		id TEXT PRIMARY KEY,
-    		original_url TEXT NOT NULL,
-    	user_id TEXT,
-    	is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
-    	UNIQUE(original_url, user_id)
-	);`
-	_, err := db.Exec(context.Background(), query)
-	if err != nil {
-		log.Fatal("failed to create table:", err)
-	}
 	return &PostgresRepository{db: db}
 }
 
@@ -98,7 +88,7 @@ func (r *PostgresRepository) GetAllForUser(userID string) map[string]string {
 	return result
 }
 
-func (r *PostgresRepository) Get(id string) (string, bool, bool) {
+func (r *PostgresRepository) Get(id string) (string, error) {
 	var original string
 	var isDeleted bool
 
@@ -108,10 +98,17 @@ func (r *PostgresRepository) Get(id string) (string, bool, bool) {
 	).Scan(&original, &isDeleted)
 
 	if err != nil {
-		return "", false, false
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", model.ErrNotFound
+		}
+		return "", err
 	}
 
-	return original, true, isDeleted
+	if isDeleted {
+		return "", model.ErrDeleted
+	}
+
+	return original, nil
 }
 
 func (r *PostgresRepository) Ping(ctx context.Context) error {

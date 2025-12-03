@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/Guldana11/shortener/internal/model"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,6 +24,18 @@ func getTestDB(t *testing.T) *pgxpool.Pool {
 	_, err = db.Exec(context.Background(), "DROP TABLE IF EXISTS urls")
 	if err != nil {
 		t.Fatalf("Не удалось сбросить таблицу: %v", err)
+	}
+
+	_, err = db.Exec(context.Background(), `
+	CREATE TABLE urls (
+		id TEXT PRIMARY KEY,
+		original_url TEXT NOT NULL,
+		user_id TEXT,
+		is_deleted BOOLEAN DEFAULT FALSE
+	);
+	`)
+	if err != nil {
+		t.Fatalf("Не удалось создать таблицу urls: %v", err)
 	}
 
 	return db
@@ -62,12 +75,9 @@ func TestPostgresRepository_CreateAndGet(t *testing.T) {
 				t.Fatal("Create вернул пустой ID")
 			}
 
-			got, ok, deleted := repo.Get(id)
-			if !ok {
-				t.Fatalf("Get не нашёл URL по ID %s", id)
-			}
-			if deleted {
-				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", id)
+			got, err := repo.Get(id)
+			if err != nil {
+				t.Fatalf("Get вернул ошибку: %v", err)
 			}
 			if got != tt.originalURL {
 				t.Fatalf("ожидали %v, получили %v", tt.originalURL, got)
@@ -82,29 +92,16 @@ func TestPostgresRepository_CreateWithID(t *testing.T) {
 
 	repo := NewPostgresRepository(db)
 
-	tests := []struct {
-		name        string
-		id          string
-		originalURL string
-	}{
-		{"Создание с заданным ID", "customID", "https://example.net"},
+	id := "customID"
+	url := "https://example.net"
+	repo.CreateWithID(id, url)
+
+	got, err := repo.Get(id)
+	if err != nil {
+		t.Fatalf("Get вернул ошибку: %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo.CreateWithID(tt.id, tt.originalURL)
-
-			got, ok, deleted := repo.Get(tt.id)
-			if !ok {
-				t.Fatal("Get не вернул URL после CreateWithID")
-			}
-			if got != tt.originalURL {
-				t.Errorf("ожидали %v, получили %v", tt.originalURL, got)
-			}
-			if deleted {
-				t.Fatalf("URL с ID %s помечен как удалённый, хотя только что создан", tt.id)
-			}
-		})
+	if got != url {
+		t.Errorf("ожидали %v, получили %v", url, got)
 	}
 }
 
@@ -148,11 +145,9 @@ func TestPostgresRepository_Ping(t *testing.T) {
 
 	repo := NewPostgresRepository(db)
 
-	t.Run("Ping успешен", func(t *testing.T) {
-		if err := repo.Ping(context.Background()); err != nil {
-			t.Errorf("Ping() вернул ошибку: %v", err)
-		}
-	})
+	if err := repo.Ping(context.Background()); err != nil {
+		t.Errorf("Ping() вернул ошибку: %v", err)
+	}
 }
 
 func TestPostgresRepository_MarkAsDeleted(t *testing.T) {
@@ -190,15 +185,9 @@ func TestPostgresRepository_MarkAsDeleted(t *testing.T) {
 			}
 
 			for _, id := range tt.ids {
-				got, ok, deleted := repo.Get(id)
-				if !ok {
-					t.Fatalf("Get не вернул URL с ID %s", id)
-				}
-				if got == "" {
-					t.Errorf("URL с ID %s пустой", id)
-				}
-				if !deleted {
-					t.Errorf("URL с ID %s не помечен как удалённый", id)
+				_, err := repo.Get(id)
+				if err != model.ErrDeleted {
+					t.Errorf("URL с ID %s должен быть помечен как удалённый, получили: %v", id, err)
 				}
 			}
 		})
