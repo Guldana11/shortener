@@ -20,6 +20,31 @@ type URLRepository struct {
 	file  string
 }
 
+func NewURLRepository(filePath string) *URLRepository {
+	r := &URLRepository{
+		store: make(map[string]map[string]string),
+		file:  filePath,
+	}
+	r.loadFromFile()
+	return r
+}
+
+func (r *URLRepository) Create(originalURL string) (string, error) {
+	return r.CreateForUser(" ", originalURL)
+}
+
+func (r *URLRepository) CreateWithID(id string, originalURL string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.store[" "] == nil {
+		r.store[" "] = make(map[string]string)
+	}
+
+	r.store[" "][id] = originalURL
+	r.saveToFile()
+}
+
 func (r *URLRepository) MarkAsDeleted(userID string, ids []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -35,15 +60,6 @@ func (r *URLRepository) MarkAsDeleted(userID string, ids []string) error {
 
 	r.saveToFile()
 	return nil
-}
-
-func NewURLRepository(filePath string) *URLRepository {
-	r := &URLRepository{
-		store: make(map[string]map[string]string),
-		file:  filePath,
-	}
-	r.loadFromFile()
-	return r
 }
 
 func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error) {
@@ -64,6 +80,34 @@ func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error
 	r.store[userID][id] = originalURL
 	r.saveToFile()
 	return id, nil
+}
+
+func (r *URLRepository) GetAllForUser(userID string) map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	userStore, ok := r.store[userID]
+	if !ok || len(userStore) == 0 {
+		return map[string]string{}
+	}
+
+	result := make(map[string]string, len(userStore))
+	for k, v := range userStore {
+		result[k] = v
+	}
+	return result
+}
+
+func (r *URLRepository) Get(id string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, userStore := range r.store {
+		if url, exists := userStore[id]; exists {
+			return url, nil
+		}
+	}
+	return "", model.ErrNotFound
 }
 
 func (r *URLRepository) BatchCreateForUser(userID string, urls []string) []string {
@@ -91,53 +135,6 @@ func (r *URLRepository) BatchCreateForUser(userID string, urls []string) []strin
 	return ids
 }
 
-func (r *URLRepository) GetAllForUser(userID string) map[string]string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	userStore, ok := r.store[userID]
-	if !ok || len(userStore) == 0 {
-		return map[string]string{}
-	}
-
-	result := make(map[string]string, len(userStore))
-	for k, v := range userStore {
-		result[k] = v
-	}
-	return result
-}
-
-func (r *URLRepository) Get(userID, id string) (string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	userStore, ok := r.store[userID]
-	if !ok {
-		return "", model.ErrNotFound
-	}
-	url, exists := userStore[id]
-	if !exists {
-		return "", model.ErrNotFound
-	}
-	return url, nil
-}
-
-func (r *URLRepository) GetForUser(userID, id string) (string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	userStore, ok := r.store[userID]
-	if !ok {
-		return "", model.ErrNotFound
-	}
-
-	url, exists := userStore[id]
-	if !exists {
-		return "", model.ErrNotFound
-	}
-
-	return url, nil
-}
-
 func (r *URLRepository) Ping(ctx context.Context) error {
 	return nil
 }
@@ -146,10 +143,11 @@ func (r *URLRepository) saveToFile() {
 	if r.file == "" {
 		return
 	}
-	data, err := json.MarshalIndent(r.store, "", "  ")
+	data, err := json.MarshalIndent(r.store, "", " ")
 	if err != nil {
 		return
 	}
+
 	_ = os.WriteFile(r.file, data, 0644)
 }
 

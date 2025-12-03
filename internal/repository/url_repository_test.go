@@ -35,7 +35,7 @@ func TestURLRepository_CreateForUser(t *testing.T) {
 		t.Error("CreateForUser вернул пустой ID")
 	}
 
-	got, err := r.GetForUser(userID, id)
+	got, err := r.Get(id)
 	if err != nil {
 		t.Errorf("URL не найден после CreateForUser: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestURLRepository_BatchCreateForUser(t *testing.T) {
 	}
 
 	for i, id := range ids {
-		got, err := r.GetForUser(userID, id)
+		got, err := r.Get(id)
 		if err != nil {
 			t.Errorf("URL не найден после BatchCreateForUser: %v", err)
 		}
@@ -112,22 +112,21 @@ func TestURLRepository_MarkAsDeleted(t *testing.T) {
 		t.Errorf("MarkAsDeleted вернул ошибку: %v", err)
 	}
 
-	if _, err := r.GetForUser(userID, "id1"); err == nil {
+	if _, err := r.Get("id1"); err == nil {
 		t.Errorf("URL id1 должен быть удалён")
 	}
-	if _, err := r.GetForUser(userID, "id2"); err != nil {
+	if _, err := r.Get("id2"); err != nil {
 		t.Errorf("URL id2 не должен быть удалён: %v", err)
 	}
 }
 
 func TestURLRepository_Get_NonExistent(t *testing.T) {
-	userID := "user1"
 	r := &URLRepository{
 		store: map[string]map[string]string{},
 		mu:    sync.RWMutex{},
 	}
 
-	_, err := r.GetForUser(userID, "unknown")
+	_, err := r.Get("unknown")
 	if err != model.ErrNotFound {
 		t.Errorf("ожидали ErrNotFound для несуществующего ID, получили %v", err)
 	}
