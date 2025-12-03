@@ -20,30 +20,6 @@ func TestNewURLRepository(t *testing.T) {
 	}
 }
 
-func TestURLRepository_Create(t *testing.T) {
-	repo := &URLRepository{
-		store: map[string]map[string]string{},
-		mu:    sync.RWMutex{},
-	}
-
-	id, err := repo.Create("https://example.com")
-	if err != nil {
-		t.Fatalf("Create вернул ошибку: %v", err)
-	}
-
-	if id == "" {
-		t.Error("Create вернул пустой ID")
-	}
-
-	got, err := repo.Get(id)
-	if err != nil {
-		t.Errorf("URL не найден после Create: %v", err)
-	}
-	if got != "https://example.com" {
-		t.Errorf("ожидали %v, получили %v", "https://example.com", got)
-	}
-}
-
 func TestURLRepository_CreateForUser(t *testing.T) {
 	userID := "user1"
 	r := &URLRepository{

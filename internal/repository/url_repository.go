@@ -46,14 +46,6 @@ func NewURLRepository(filePath string) *URLRepository {
 	return r
 }
 
-func (r *URLRepository) Create(originalURL string) (string, error) {
-	return r.CreateForUser("", originalURL)
-}
-
-func (r *URLRepository) CreateWithID(id, originalURL string) {
-	_, _ = r.CreateForUser("", originalURL)
-}
-
 func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -115,8 +107,18 @@ func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 	return result
 }
 
-func (r *URLRepository) Get(id string) (string, error) {
-	return r.GetForUser("", id)
+func (r *URLRepository) Get(userID, id string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	userStore, ok := r.store[userID]
+	if !ok {
+		return "", model.ErrNotFound
+	}
+	url, exists := userStore[id]
+	if !exists {
+		return "", model.ErrNotFound
+	}
+	return url, nil
 }
 
 func (r *URLRepository) GetForUser(userID, id string) (string, error) {
