@@ -8,19 +8,21 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/Guldana11/shortener/internal/model"
 )
 
 var ErrURLExists = errors.New("url already exists")
 
 type URLRepository struct {
-	store map[string]string
+	store map[string]map[string]string
 	mu    sync.RWMutex
 	file  string
 }
 
 func NewURLRepository(filePath string) *URLRepository {
 	r := &URLRepository{
-		store: make(map[string]string),
+		store: make(map[string]map[string]string),
 		file:  filePath,
 	}
 	r.loadFromFile()
@@ -28,60 +30,104 @@ func NewURLRepository(filePath string) *URLRepository {
 }
 
 func (r *URLRepository) Create(originalURL string) (string, error) {
+	return r.CreateForUser(" ", originalURL)
+}
+
+func (r *URLRepository) CreateWithID(id string, originalURL string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for existingID, url := range r.store {
+	if r.store[" "] == nil {
+		r.store[" "] = make(map[string]string)
+	}
+
+	r.store[" "][id] = originalURL
+	r.saveToFile()
+}
+
+func (r *URLRepository) MarkAsDeleted(userID string, ids []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	userStore, ok := r.store[userID]
+	if !ok {
+		return nil
+	}
+
+	for _, id := range ids {
+		delete(userStore, id)
+	}
+
+	r.saveToFile()
+	return nil
+}
+
+func (r *URLRepository) CreateForUser(userID, originalURL string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.store[userID] == nil {
+		r.store[userID] = make(map[string]string)
+	}
+
+	for id, url := range r.store[userID] {
 		if url == originalURL {
-			return existingID, ErrURLExists
+			return id, ErrURLExists
 		}
 	}
 
-	var id string
-	for {
-		id = generateID()
-		if _, exists := r.store[id]; !exists {
-			break
-		}
-	}
-
-	r.store[id] = originalURL
+	id := generateID()
+	r.store[userID][id] = originalURL
 	r.saveToFile()
 	return id, nil
 }
 
-func (r *URLRepository) CreateWithID(id, originalURL string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.store[id] = originalURL
-	r.saveToFile()
-}
-
-func (r *URLRepository) Get(id string) (string, bool) {
+func (r *URLRepository) GetAllForUser(userID string) map[string]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	url, ok := r.store[id]
-	return url, ok
+
+	userStore, ok := r.store[userID]
+	if !ok || len(userStore) == 0 {
+		return map[string]string{}
+	}
+
+	result := make(map[string]string, len(userStore))
+	for k, v := range userStore {
+		result[k] = v
+	}
+	return result
 }
 
-func (r *URLRepository) Ping(ctx context.Context) error {
-	return nil
+func (r *URLRepository) Get(id string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, userStore := range r.store {
+		if url, exists := userStore[id]; exists {
+			return url, nil
+		}
+	}
+	return "", model.ErrNotFound
 }
 
-func (r *URLRepository) BatchCreate(urls []string) []string {
+func (r *URLRepository) BatchCreateForUser(userID string, urls []string) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if r.store[userID] == nil {
+		r.store[userID] = make(map[string]string)
+	}
 
 	ids := make([]string, len(urls))
 	for i, u := range urls {
 		var id string
 		for {
 			id = generateID()
-			if _, exists := r.store[id]; !exists {
+			if _, exists := r.store[userID][id]; !exists {
 				break
 			}
 		}
-		r.store[id] = u
+		r.store[userID][id] = u
 		ids[i] = id
 	}
 
@@ -89,14 +135,19 @@ func (r *URLRepository) BatchCreate(urls []string) []string {
 	return ids
 }
 
+func (r *URLRepository) Ping(ctx context.Context) error {
+	return nil
+}
+
 func (r *URLRepository) saveToFile() {
 	if r.file == "" {
 		return
 	}
-	data, err := json.MarshalIndent(r.store, "", "  ")
+	data, err := json.MarshalIndent(r.store, "", " ")
 	if err != nil {
 		return
 	}
+
 	_ = os.WriteFile(r.file, data, 0644)
 }
 
@@ -110,14 +161,12 @@ func (r *URLRepository) loadFromFile() {
 		return
 	}
 
-	var loaded map[string]string
+	var loaded map[string]map[string]string
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return
 	}
 
-	for id, url := range loaded {
-		r.store[id] = url
-	}
+	r.store = loaded
 }
 
 func generateID() string {

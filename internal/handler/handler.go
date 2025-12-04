@@ -10,6 +10,7 @@ import (
 
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
@@ -20,23 +21,36 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-type URLHandler struct {
-	Repo    repository.Repository
-	BaseURL string
-	logger  *zap.Logger
+type DeleteWorkerInterface interface {
+	EnqueueDeletion(userID string, ids []string)
 }
 
-func NewURLHandler(baseURL string, repo repository.Repository) *URLHandler {
+type URLHandler struct {
+	Repo         repository.Repository
+	BaseURL      string
+	logger       *zap.Logger
+	DeleteWorker DeleteWorkerInterface
+}
+
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
-		Repo:    repo,
-		BaseURL: baseURL,
-		logger:  logger,
+		Repo:         repo,
+		BaseURL:      baseURL,
+		logger:       logger,
+		DeleteWorker: dw,
 	}
 }
 
 // POST /
 func (h *URLHandler) PostHandler(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36] // UUID без дефисов
+	}
+
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		h.logger.Error("failed to read request body", zap.Error(err))
@@ -50,7 +64,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 
 	originalURL := string(body)
 
-	id, err := h.Repo.Create(originalURL)
+	id, err := h.Repo.CreateForUser(userID, originalURL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
 			shortURL, _ := url.JoinPath(h.BaseURL, id)
@@ -80,9 +94,16 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	original, ok := h.Repo.Get(id)
-	if !ok {
-		c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+	original, err := h.Repo.Get(id)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.ErrNotFound):
+			c.String(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+		case errors.Is(err, model.ErrDeleted):
+			c.String(http.StatusGone, http.StatusText(http.StatusGone))
+		default:
+			c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		}
 		return
 	}
 
@@ -91,6 +112,14 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 
 // POST /api/shorten
 func (h *URLHandler) ShortenHandler(c *gin.Context) {
+	// Получаем userID
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36]
+	}
+
 	var req model.ShortenRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil || req.URL == "" {
 		h.logger.Error("failed to decode JSON or missing URL", zap.Error(err))
@@ -98,7 +127,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	id, err := h.Repo.Create(req.URL)
+	id, err := h.Repo.CreateForUser(userID, req.URL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
 			shortURL, _ := url.JoinPath(h.BaseURL, id)
@@ -141,6 +170,13 @@ func (h *URLHandler) PingHandler(c *gin.Context) {
 
 // POST /api/shorten/batch
 func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		cookie := service.GenerateUserCookie()
+		http.SetCookie(c.Writer, cookie)
+		userID = cookie.Value[:36]
+	}
+
 	var req []struct {
 		CorrelationID string `json:"correlation_id"`
 		OriginalURL   string `json:"original_url"`
@@ -168,7 +204,7 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	responses := make([]responseItem, len(req))
 
 	for i, item := range req {
-		id, err := h.Repo.Create(item.OriginalURL)
+		id, err := h.Repo.CreateForUser(userID, item.OriginalURL)
 
 		if err != nil {
 			var pgErr *pgconn.PgError
@@ -187,6 +223,63 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, responses)
+}
+
+// GET /api/user/urls
+func (h *URLHandler) GetUserURLs(c *gin.Context) {
+	c.Header("Content-Type", "application/json")
+
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	urls := h.Repo.GetAllForUser(userID.(string))
+	if len(urls) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	type respPair struct {
+		ShortURL    string `json:"short_url"`
+		OriginalURL string `json:"original_url"`
+	}
+
+	resp := make([]respPair, 0, len(urls))
+	for id, original := range urls {
+		shortURL, err := url.JoinPath(h.BaseURL, id)
+		if err != nil {
+			h.logger.Error("failed to build short URL", zap.Error(err), zap.String("id", id))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+			return
+		}
+		resp = append(resp, respPair{
+			ShortURL:    shortURL,
+			OriginalURL: original,
+		})
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// DELETE /api/user/urls
+func (h *URLHandler) DeleteUserURLs(c *gin.Context) {
+	userID, err := service.ValidateUserCookie(c.Request)
+	if err != nil || userID == "" {
+		c.String(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var ids []string
+	if err := json.NewDecoder(c.Request.Body).Decode(&ids); err != nil {
+		c.String(http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	h.DeleteWorker.EnqueueDeletion(userID, ids)
+
+	c.Status(http.StatusAccepted)
 }
 
 func containsSlash(s string) bool {

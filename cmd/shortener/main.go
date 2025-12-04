@@ -4,11 +4,14 @@ import (
 	"context"
 
 	"github.com/Guldana11/shortener/internal/config"
+	"github.com/Guldana11/shortener/internal/config/db"
 	"github.com/Guldana11/shortener/internal/handler"
 	"github.com/Guldana11/shortener/internal/middleware"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/worker"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
 )
 
@@ -20,11 +23,13 @@ func main() {
 	var repo repository.Repository
 
 	if cfg.DatabaseDSN != "" {
-		db, err := pgxpool.New(context.Background(), cfg.DatabaseDSN)
+		pool, err := db.NewPostgresPool(context.Background(), cfg.DatabaseDSN, "file://migrations")
 		if err != nil {
 			logger.Fatal("failed to connect to database", zap.Error(err))
 		}
-		repo = repository.NewPostgresRepository(db)
+		defer pool.Close()
+
+		repo = repository.NewPostgresRepository(pool)
 		logger.Info("Using PostgreSQL storage")
 	} else if cfg.FileStoragePath != "" {
 		repo = repository.NewURLRepository(cfg.FileStoragePath)
@@ -34,9 +39,10 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
-	h := handler.NewURLHandler(cfg.BaseURL, repo)
-	r := setupRouter(h, logger)
+	deleteWorker := worker.NewDeleteWorker(repo, 1000)
+	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker)
 
+	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
 	if err := r.Run(cfg.Address); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
@@ -48,6 +54,7 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(middleware.LoggerMiddleware(logger))
 	r.Use(middleware.GzipMiddleware())
+	r.Use(middleware.UserCookieMiddleware())
 
 	r.GET("/ping", h.PingHandler)
 
@@ -55,6 +62,9 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.GET("/:id", h.GetHandler)
 	r.POST("/api/shorten", h.ShortenHandler)
 	r.POST("/api/shorten/batch", h.ShortenBatchHandler)
+	r.GET("/api/user/urls", h.GetUserURLs)
+
+	r.DELETE("/api/user/urls", h.DeleteUserURLs)
 
 	return r
 }
