@@ -44,12 +44,10 @@ func main() {
 
 	if cfg.AuditFile != "" {
 		publisher.Subscribe(audit.NewFileObserver(cfg.AuditFile))
-		logger.Info("Audit file enabled", zap.String("file", cfg.AuditFile))
 	}
 
 	if cfg.AuditURL != "" {
-		publisher.Subscribe(audit.NewHttpObserver(cfg.AuditURL))
-		logger.Info("Audit http enabled", zap.String("url", cfg.AuditURL))
+		publisher.Subscribe(audit.NewHTTPObserver(cfg.AuditURL))
 	}
 
 	deleteWorker := worker.NewDeleteWorker(repo, 1000)

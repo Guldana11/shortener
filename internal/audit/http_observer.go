@@ -6,15 +6,20 @@ import (
 	"net/http"
 )
 
-type HttpObserver struct {
+type HTTPObserver struct {
 	url string
 }
 
-func NewHttpObserver(url string) *HttpObserver {
-	return &HttpObserver{url: url}
+func NewHTTPObserver(url string) *HTTPObserver {
+	return &HTTPObserver{url: url}
 }
 
-func (h *HttpObserver) Notify(e Event) {
+func (h *HTTPObserver) Notify(e Event) {
 	data, _ := json.Marshal(e)
-	_, _ = http.Post(h.url, "application/json", bytes.NewBuffer(data))
+
+	resp, err := http.Post(h.url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
 }
