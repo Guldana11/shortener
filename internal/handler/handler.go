@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
+	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/Guldana11/shortener/internal/service"
@@ -30,15 +32,17 @@ type URLHandler struct {
 	BaseURL      string
 	logger       *zap.Logger
 	DeleteWorker DeleteWorkerInterface
+	Publisher    *audit.Publisher
 }
 
-func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, publisher *audit.Publisher) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
 		Repo:         repo,
 		BaseURL:      baseURL,
 		logger:       logger,
 		DeleteWorker: dw,
+		Publisher:    publisher,
 	}
 }
 
@@ -84,6 +88,14 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	}
 
 	c.String(http.StatusCreated, shortURL)
+
+	h.Publisher.Publish(audit.Event{
+		Ts:     time.Now().Unix(),
+		Action: "shorten",
+		UserID: userID,
+		URL:    originalURL,
+	})
+
 }
 
 // GET /:id
@@ -108,6 +120,16 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusTemporaryRedirect, original)
+
+	userID, _ := service.ValidateUserCookie(c.Request)
+
+	h.Publisher.Publish(audit.Event{
+		Ts:     time.Now().Unix(),
+		Action: "follow",
+		UserID: userID,
+		URL:    original,
+	})
+
 }
 
 // POST /api/shorten
@@ -152,6 +174,14 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, model.ShortenResponse{
 		Result: shortURL,
 	})
+
+	h.Publisher.Publish(audit.Event{
+		Ts:     time.Now().Unix(),
+		Action: "shorten",
+		UserID: userID,
+		URL:    req.URL,
+	})
+
 }
 
 // GET /ping
