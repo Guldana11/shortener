@@ -90,7 +90,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	c.String(http.StatusCreated, shortURL)
 
 	h.Publisher.Publish(audit.Event{
-		Ts:     time.Now().Unix(),
+		TS:     time.Now().Unix(),
 		Action: "shorten",
 		UserID: userID,
 		URL:    originalURL,
@@ -124,7 +124,7 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 	userID, _ := service.ValidateUserCookie(c.Request)
 
 	h.Publisher.Publish(audit.Event{
-		Ts:     time.Now().Unix(),
+		TS:     time.Now().Unix(),
 		Action: "follow",
 		UserID: userID,
 		URL:    original,
@@ -176,7 +176,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	})
 
 	h.Publisher.Publish(audit.Event{
-		Ts:     time.Now().Unix(),
+		TS:     time.Now().Unix(),
 		Action: "shorten",
 		UserID: userID,
 		URL:    req.URL,
