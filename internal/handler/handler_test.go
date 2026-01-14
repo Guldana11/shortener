@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/Guldana11/shortener/internal/service"
@@ -90,14 +91,22 @@ type mockDeleteWorker struct{}
 
 func (m *mockDeleteWorker) EnqueueDeletion(userID string, ids []string) {}
 
+type mockPublisher struct{}
+
+func (m *mockPublisher) Publish(data interface{}) error {
+	return nil
+}
+
 func TestPostHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
+	pub := &audit.Publisher{}
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      "http://localhost:8080",
 		logger:       zap.NewNop(),
 		DeleteWorker: &mockDeleteWorker{},
+		Publisher:    pub,
 	}
 
 	rec := httptest.NewRecorder()
@@ -120,10 +129,12 @@ func TestGetHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
 	id, _ := repo.CreateForUser("user1", "https://example.com")
+	pub := &audit.Publisher{}
 	h := &URLHandler{
-		Repo:    repo,
-		BaseURL: "http://localhost:8080",
-		logger:  zap.NewNop(),
+		Repo:      repo,
+		BaseURL:   "http://localhost:8080",
+		logger:    zap.NewNop(),
+		Publisher: pub,
 	}
 
 	rec := httptest.NewRecorder()
@@ -145,11 +156,13 @@ func TestGetHandler(t *testing.T) {
 func TestShortenHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
+	pub := &audit.Publisher{}
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      "http://localhost:8080",
 		logger:       zap.NewNop(),
 		DeleteWorker: &mockDeleteWorker{},
+		Publisher:    pub,
 	}
 
 	body := `{"url":"https://example.com"}`
