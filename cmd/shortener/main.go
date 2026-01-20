@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/config"
@@ -17,6 +19,12 @@ import (
 )
 
 func main() {
+	go func() {
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			zap.L().Fatal("pprof server failed", zap.Error(err))
+		}
+	}()
+
 	cfg := config.Init()
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()

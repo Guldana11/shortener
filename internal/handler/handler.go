@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Guldana11/shortener/internal/audit"
@@ -71,7 +71,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	id, err := h.Repo.CreateForUser(userID, originalURL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
-			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			shortURL := buildShortURL(h.BaseURL, id)
 			c.String(http.StatusConflict, shortURL)
 			return
 		}
@@ -80,12 +80,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 		return
 	}
 
-	shortURL, err := url.JoinPath(h.BaseURL, id)
-	if err != nil {
-		h.logger.Error("failed to join URL path", zap.Error(err))
-		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
-		return
-	}
+	shortURL := buildShortURL(h.BaseURL, id)
 
 	c.String(http.StatusCreated, shortURL)
 
@@ -152,7 +147,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	id, err := h.Repo.CreateForUser(userID, req.URL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
-			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			shortURL := buildShortURL(h.BaseURL, id)
 			c.JSON(http.StatusConflict, model.ShortenResponse{
 				Result: shortURL,
 			})
@@ -164,12 +159,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	shortURL, err := url.JoinPath(h.BaseURL, id)
-	if err != nil {
-		h.logger.Error("failed to join URL path", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
-		return
-	}
+	shortURL := buildShortURL(h.BaseURL, id)
 
 	c.JSON(http.StatusCreated, model.ShortenResponse{
 		Result: shortURL,
@@ -245,7 +235,7 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 			}
 		}
 
-		shortURL, _ := url.JoinPath(h.BaseURL, id)
+		shortURL := buildShortURL(h.BaseURL, id)
 		responses[i] = responseItem{
 			CorrelationID: item.CorrelationID,
 			ShortURL:      shortURL,
@@ -278,12 +268,8 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 
 	resp := make([]respPair, 0, len(urls))
 	for id, original := range urls {
-		shortURL, err := url.JoinPath(h.BaseURL, id)
-		if err != nil {
-			h.logger.Error("failed to build short URL", zap.Error(err), zap.String("id", id))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
-			return
-		}
+		shortURL := buildShortURL(h.BaseURL, id)
+
 		resp = append(resp, respPair{
 			ShortURL:    shortURL,
 			OriginalURL: original,
@@ -319,4 +305,13 @@ func containsSlash(s string) bool {
 		}
 	}
 	return false
+}
+
+func buildShortURL(baseURL, id string) string {
+	var b strings.Builder
+	b.Grow(len(baseURL) + 1 + len(id))
+	b.WriteString(baseURL)
+	b.WriteByte('/')
+	b.WriteString(id)
+	return b.String()
 }
