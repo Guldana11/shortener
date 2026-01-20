@@ -1,3 +1,5 @@
+// Package repository содержит реализации хранилищ для сервиса сокращения URL.
+// В частности, реализует работу с PostgreSQL.
 package repository
 
 import (
@@ -13,18 +15,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PostgresRepository реализует интерфейс Repository для хранения URL в PostgreSQL.
 type PostgresRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewPostgresRepository создаёт новый экземпляр PostgresRepository.
 func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
+// Create создаёт короткий URL для оригинального URL без указания пользователя.
 func (r *PostgresRepository) Create(originalURL string) (string, error) {
 	return r.CreateForUser("", originalURL)
 }
 
+// CreateWithID создаёт запись URL с заданным ID. Ошибки логируются, но не возвращаются.
 func (r *PostgresRepository) CreateWithID(id, originalURL string) {
 	_, err := r.db.Exec(context.Background(),
 		"INSERT INTO urls (id, original_url) VALUES ($1, $2)",
@@ -35,6 +41,10 @@ func (r *PostgresRepository) CreateWithID(id, originalURL string) {
 	}
 }
 
+// CreateForUser создаёт короткий URL для заданного пользователя.
+//
+// Если URL уже существует, возвращает ErrURLExists и существующий ID.
+// В противном случае возвращает новый ID.
 func (r *PostgresRepository) CreateForUser(userID, originalURL string) (string, error) {
 	id := generateID()
 
@@ -56,6 +66,8 @@ func (r *PostgresRepository) CreateForUser(userID, originalURL string) (string, 
 	return id, nil
 }
 
+// getIDByOriginalForUser возвращает ID существующего URL для пользователя.
+// В случае отсутствия возвращает пустую строку и false.
 func (r *PostgresRepository) getIDByOriginalForUser(userID, originalURL string) (string, bool) {
 	var id string
 	err := r.db.QueryRow(context.Background(),
@@ -68,6 +80,7 @@ func (r *PostgresRepository) getIDByOriginalForUser(userID, originalURL string) 
 	return id, true
 }
 
+// GetAllForUser возвращает все URL для пользователя, которые не удалены.
 func (r *PostgresRepository) GetAllForUser(userID string) map[string]string {
 	rows, err := r.db.Query(context.Background(),
 		"SELECT id, original_url FROM urls WHERE user_id=$1 AND is_deleted=FALSE",
@@ -89,6 +102,10 @@ func (r *PostgresRepository) GetAllForUser(userID string) map[string]string {
 	return result
 }
 
+// Get возвращает оригинальный URL по его ID.
+//
+// Если URL не найден, возвращает model.ErrNotFound.
+// Если URL помечен как удалённый, возвращает model.ErrDeleted.
 func (r *PostgresRepository) Get(id string) (string, error) {
 	var original string
 	var isDeleted bool
@@ -112,10 +129,12 @@ func (r *PostgresRepository) Get(id string) (string, error) {
 	return original, nil
 }
 
+// Ping проверяет доступность базы данных.
 func (r *PostgresRepository) Ping(ctx context.Context) error {
 	return r.db.Ping(ctx)
 }
 
+// MarkAsDeleted помечает указанные URL пользователя как удалённые.
 func (r *PostgresRepository) MarkAsDeleted(userID string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
