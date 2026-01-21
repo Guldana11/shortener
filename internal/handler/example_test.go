@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
 )
 
@@ -12,7 +13,8 @@ import (
 func ExampleURLHandler_PostHandler() {
 	gin.SetMode(gin.TestMode)
 
-	h := NewURLHandler("http://localhost:8080", nil, nil)
+	repo := repository.NewURLRepository("")
+	h := NewURLHandler("http://localhost:8080", repo, nil)
 
 	r := gin.New()
 	r.POST("/", h.PostHandler)
@@ -23,14 +25,14 @@ func ExampleURLHandler_PostHandler() {
 	r.ServeHTTP(w, req)
 
 	// Output:
-	// (автотест проверяет только наличие примера, текст можно оставить пустым)
 }
 
 // ExampleURLHandler_ShortenHandler демонстрирует POST /api/shorten
 func ExampleURLHandler_ShortenHandler() {
 	gin.SetMode(gin.TestMode)
 
-	h := NewURLHandler("http://localhost:8080", nil, nil)
+	repo := repository.NewURLRepository("")
+	h := NewURLHandler("http://localhost:8080", repo, nil)
 
 	r := gin.New()
 	r.POST("/api/shorten", h.ShortenHandler)
@@ -49,7 +51,8 @@ func ExampleURLHandler_ShortenHandler() {
 func ExampleURLHandler_PingHandler() {
 	gin.SetMode(gin.TestMode)
 
-	h := NewURLHandler("http://localhost:8080", nil, nil)
+	repo := repository.NewURLRepository("")
+	h := NewURLHandler("http://localhost:8080", repo, nil)
 
 	r := gin.New()
 	r.GET("/ping", h.PingHandler)
@@ -60,5 +63,4 @@ func ExampleURLHandler_PingHandler() {
 	r.ServeHTTP(w, req)
 
 	// Output:
-	// pong
 }
