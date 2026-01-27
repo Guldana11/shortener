@@ -1,3 +1,4 @@
+// Package handler содержит HTTP-хендлеры сервиса сокращения URL.
 package handler
 
 import (
@@ -17,14 +18,19 @@ import (
 	"go.uber.org/zap"
 )
 
+// Pinger описывает интерфейс проверки доступности хранилища.
 type Pinger interface {
+	// Ping проверяет доступность сервиса хранения.
 	Ping(ctx context.Context) error
 }
 
+// DeleteWorkerInterface описывает очередь фонового удаления URL пользователя.
 type DeleteWorkerInterface interface {
+	// EnqueueDeletion добавляет список URL в очередь удаления.
 	EnqueueDeletion(userID string, ids []string)
 }
 
+// URLHandler реализует HTTP-хендлеры сервиса сокращения URL.
 type URLHandler struct {
 	Repo         repository.Repository
 	BaseURL      string
@@ -32,6 +38,7 @@ type URLHandler struct {
 	DeleteWorker DeleteWorkerInterface
 }
 
+// NewURLHandler создаёт новый экземпляр URLHandler.
 func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
@@ -42,7 +49,8 @@ func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerIn
 	}
 }
 
-// POST /
+// PostHandler обрабатывает POST /
+// Принимает URL в теле запроса и возвращает сокращённый URL в виде строки.
 func (h *URLHandler) PostHandler(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
@@ -86,7 +94,8 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	c.String(http.StatusCreated, shortURL)
 }
 
-// GET /:id
+// GetHandler обрабатывает GET /:id
+// Выполняет редирект на оригинальный URL по его идентификатору.
 func (h *URLHandler) GetHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" || containsSlash(id) {
@@ -110,7 +119,8 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, original)
 }
 
-// POST /api/shorten
+// ShortenHandler обрабатывает POST /api/shorten
+// Принимает JSON с полем "url" и возвращает JSON с короткой ссылкой.
 func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	// Получаем userID
 	userID, err := service.ValidateUserCookie(c.Request)
@@ -154,7 +164,8 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	})
 }
 
-// GET /ping
+// PingHandler обрабатывает GET /ping
+// Проверяет доступность базы данных.
 func (h *URLHandler) PingHandler(c *gin.Context) {
 	if h.Repo == nil {
 		c.String(http.StatusInternalServerError, "database not configured")
@@ -168,7 +179,8 @@ func (h *URLHandler) PingHandler(c *gin.Context) {
 	c.String(http.StatusOK, "pong")
 }
 
-// POST /api/shorten/batch
+// ShortenBatchHandler обрабатывает POST /api/shorten/batch
+// Позволяет создать несколько сокращённых URL за один запрос.
 func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
@@ -225,7 +237,8 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, responses)
 }
 
-// GET /api/user/urls
+// GetUserURLs обрабатывает GET /api/user/urls
+// Возвращает список всех URL текущего пользователя.
 func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 
@@ -263,7 +276,8 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// DELETE /api/user/urls
+// DeleteUserURLs обрабатывает DELETE /api/user/urls
+// Принимает список идентификаторов URL и отправляет их в очередь удаления.
 func (h *URLHandler) DeleteUserURLs(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
