@@ -1,3 +1,5 @@
+// Package middleware содержит промежуточное ПО для HTTP-сервера на Gin,
+// включая логирование и сжатие gzip.
 package middleware
 
 import (
@@ -7,6 +9,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// LoggerMiddleware возвращает middleware для Gin, который логирует HTTP-запросы.
+//
+// Параметры:
+// - logger: экземпляр *zap.Logger для записи логов.
+//
+// Особенности работы:
+// 1. Замеряет время обработки запроса.
+// 2. Логирует метод запроса, URI, HTTP-статус, размер ответа и продолжительность в миллисекундах.
+// 3. URI берётся через c.FullPath(); если он пустой, используется c.Request.RequestURI.
 func LoggerMiddleware(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()

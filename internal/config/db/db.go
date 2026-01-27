@@ -1,3 +1,5 @@
+// Package db предоставляет функции для работы с базой данных PostgreSQL,
+// включая создание пула подключений и применение миграций.
 package db
 
 import (
@@ -10,6 +12,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// NewPostgresPool создаёт пул подключений к базе данных PostgreSQL и применяет миграции.
+//
+// ctx — контекст для управления временем жизни подключений.
+// dsn — строка подключения к базе данных PostgreSQL.
+// migrationsPath — путь к папке с миграциями.
+//
+// Возвращает пул подключений *pgxpool.Pool и ошибку в случае неудачи.
+//
+// Функция выполняет следующие шаги:
+// 1. Создаёт пул подключений к базе PostgreSQL через pgxpool.
+// 2. Создаёт экземпляр sql.DB для драйвера миграций.
+// 3. Создаёт драйвер для миграций с использованием sql.DB.
+// 4. Применяет все миграции из migrationsPath.
+// 5. Если миграции прошли успешно или изменений нет, возвращает пул.
 func NewPostgresPool(ctx context.Context, dsn string, migrationsPath string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
