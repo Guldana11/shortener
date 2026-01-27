@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/config"
 	"github.com/Guldana11/shortener/internal/config/db"
 	"github.com/Guldana11/shortener/internal/handler"
@@ -39,8 +40,18 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
+	publisher := audit.NewPublisher()
+
+	if cfg.AuditFile != "" {
+		publisher.Subscribe(audit.NewFileObserver(cfg.AuditFile))
+	}
+
+	if cfg.AuditURL != "" {
+		publisher.Subscribe(audit.NewHTTPObserver(cfg.AuditURL))
+	}
+
 	deleteWorker := worker.NewDeleteWorker(repo, 1000)
-	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker)
+	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, publisher)
 
 	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
