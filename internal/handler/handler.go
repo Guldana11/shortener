@@ -1,4 +1,3 @@
-// Package handler содержит HTTP-хендлеры сервиса сокращения URL.
 package handler
 
 import (
@@ -7,7 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 
 	"github.com/Guldana11/shortener/internal/audit"
@@ -20,19 +19,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// Pinger описывает интерфейс проверки доступности хранилища.
 type Pinger interface {
-	// Ping проверяет доступность сервиса хранения.
 	Ping(ctx context.Context) error
 }
 
-// DeleteWorkerInterface описывает очередь фонового удаления URL пользователя.
 type DeleteWorkerInterface interface {
-	// EnqueueDeletion добавляет список URL в очередь удаления.
 	EnqueueDeletion(userID string, ids []string)
 }
 
-// URLHandler реализует HTTP-хендлеры сервиса сокращения URL.
 type URLHandler struct {
 	Repo         repository.Repository
 	BaseURL      string
@@ -41,8 +35,7 @@ type URLHandler struct {
 	Publisher    *audit.Publisher
 }
 
-// NewURLHandler создаёт новый экземпляр URLHandler.
-func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, publisher *audit.Publisher) *URLHandler {
 	logger, _ := zap.NewProduction()
 	return &URLHandler{
 		Repo:         repo,
@@ -53,8 +46,7 @@ func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerIn
 	}
 }
 
-// PostHandler обрабатывает POST /
-// Принимает URL в теле запроса и возвращает сокращённый URL в виде строки.
+// POST /
 func (h *URLHandler) PostHandler(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
@@ -79,7 +71,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	id, err := h.Repo.CreateForUser(userID, originalURL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
-			shortURL := buildShortURL(h.BaseURL, id)
+			shortURL, _ := url.JoinPath(h.BaseURL, id)
 			c.String(http.StatusConflict, shortURL)
 			return
 		}
@@ -88,7 +80,12 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 		return
 	}
 
-	shortURL := buildShortURL(h.BaseURL, id)
+	shortURL, err := url.JoinPath(h.BaseURL, id)
+	if err != nil {
+		h.logger.Error("failed to join URL path", zap.Error(err))
+		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
 
 	c.String(http.StatusCreated, shortURL)
 
@@ -101,8 +98,7 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 
 }
 
-// GetHandler обрабатывает GET /:id
-// Выполняет редирект на оригинальный URL по его идентификатору.
+// GET /:id
 func (h *URLHandler) GetHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" || containsSlash(id) {
@@ -136,8 +132,7 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 
 }
 
-// ShortenHandler обрабатывает POST /api/shorten
-// Принимает JSON с полем "url" и возвращает JSON с короткой ссылкой.
+// POST /api/shorten
 func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	// Получаем userID
 	userID, err := service.ValidateUserCookie(c.Request)
@@ -157,7 +152,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 	id, err := h.Repo.CreateForUser(userID, req.URL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
-			shortURL := buildShortURL(h.BaseURL, id)
+			shortURL, _ := url.JoinPath(h.BaseURL, id)
 			c.JSON(http.StatusConflict, model.ShortenResponse{
 				Result: shortURL,
 			})
@@ -169,7 +164,12 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	shortURL := buildShortURL(h.BaseURL, id)
+	shortURL, err := url.JoinPath(h.BaseURL, id)
+	if err != nil {
+		h.logger.Error("failed to join URL path", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+		return
+	}
 
 	c.JSON(http.StatusCreated, model.ShortenResponse{
 		Result: shortURL,
@@ -184,8 +184,7 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 
 }
 
-// PingHandler обрабатывает GET /ping
-// Проверяет доступность базы данных.
+// GET /ping
 func (h *URLHandler) PingHandler(c *gin.Context) {
 	if h.Repo == nil {
 		c.String(http.StatusInternalServerError, "database not configured")
@@ -199,8 +198,7 @@ func (h *URLHandler) PingHandler(c *gin.Context) {
 	c.String(http.StatusOK, "pong")
 }
 
-// ShortenBatchHandler обрабатывает POST /api/shorten/batch
-// Позволяет создать несколько сокращённых URL за один запрос.
+// POST /api/shorten/batch
 func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
@@ -247,7 +245,7 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 			}
 		}
 
-		shortURL := buildShortURL(h.BaseURL, id)
+		shortURL, _ := url.JoinPath(h.BaseURL, id)
 		responses[i] = responseItem{
 			CorrelationID: item.CorrelationID,
 			ShortURL:      shortURL,
@@ -257,8 +255,7 @@ func (h *URLHandler) ShortenBatchHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, responses)
 }
 
-// GetUserURLs обрабатывает GET /api/user/urls
-// Возвращает список всех URL текущего пользователя.
+// GET /api/user/urls
 func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 
@@ -281,8 +278,12 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 
 	resp := make([]respPair, 0, len(urls))
 	for id, original := range urls {
-		shortURL := buildShortURL(h.BaseURL, id)
-
+		shortURL, err := url.JoinPath(h.BaseURL, id)
+		if err != nil {
+			h.logger.Error("failed to build short URL", zap.Error(err), zap.String("id", id))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+			return
+		}
 		resp = append(resp, respPair{
 			ShortURL:    shortURL,
 			OriginalURL: original,
@@ -292,8 +293,7 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// DeleteUserURLs обрабатывает DELETE /api/user/urls
-// Принимает список идентификаторов URL и отправляет их в очередь удаления.
+// DELETE /api/user/urls
 func (h *URLHandler) DeleteUserURLs(c *gin.Context) {
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
@@ -319,13 +319,4 @@ func containsSlash(s string) bool {
 		}
 	}
 	return false
-}
-
-func buildShortURL(baseURL, id string) string {
-	var b strings.Builder
-	b.Grow(len(baseURL) + 1 + len(id))
-	b.WriteString(baseURL)
-	b.WriteByte('/')
-	b.WriteString(id)
-	return b.String()
 }

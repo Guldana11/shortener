@@ -14,7 +14,7 @@ func ExampleURLHandler_PostHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	h := NewURLHandler("http://localhost:8080", repo, nil)
+	h := NewURLHandler("http://localhost:8080", repo, nil, nil)
 
 	r := gin.New()
 	r.POST("/", h.PostHandler)
@@ -32,7 +32,7 @@ func ExampleURLHandler_ShortenHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	h := NewURLHandler("http://localhost:8080", repo, nil)
+	h := NewURLHandler("http://localhost:8080", repo, nil, nil)
 
 	r := gin.New()
 	r.POST("/api/shorten", h.ShortenHandler)
@@ -52,7 +52,7 @@ func ExampleURLHandler_PingHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	h := NewURLHandler("http://localhost:8080", repo, nil)
+	h := NewURLHandler("http://localhost:8080", repo, nil, nil)
 
 	r := gin.New()
 	r.GET("/ping", h.PingHandler)
