@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/Guldana11/shortener/pkg/pool"
+	"hash"
 	"net/http"
 	"strings"
 
@@ -60,15 +62,33 @@ func ValidateUserCookie(r *http.Request) (string, error) {
 	return userID, nil
 }
 
+var hmacPool = pool.New(func() *hmacSHA256 {
+	return &hmacSHA256{
+		hash: hmac.New(sha256.New, secretKey),
+	}
+})
+
 // sign создаёт HMAC-SHA256 подпись для переданной строки.
 func sign(data string) string {
-	h := hmac.New(sha256.New, secretKey)
-	h.Write([]byte(data))
-	return hex.EncodeToString(h.Sum(nil))
+	h := hmacPool.Get()
+	defer hmacPool.Put(h)
+
+	h.hash.Write([]byte(data))
+	sum := h.hash.Sum(nil)
+
+	return hex.EncodeToString(sum)
 }
 
 // verify проверяет соответствие подписи данных HMAC-подписи.
 func verify(data, sig string) bool {
 	expected := sign(data)
 	return hmac.Equal([]byte(sig), []byte(expected))
+}
+
+type hmacSHA256 struct {
+	hash hash.Hash
+}
+
+func (h *hmacSHA256) Reset() {
+	h.hash.Reset()
 }
