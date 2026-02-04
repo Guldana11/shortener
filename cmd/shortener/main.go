@@ -19,9 +19,11 @@ import (
 	"go.uber.org/zap"
 )
 
-var buildVersion string
-var buildDate string
-var buildCommit string
+var (
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
+)
 
 func main() {
 	printBuildInfo()
@@ -96,22 +98,7 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 }
 
 func printBuildInfo() {
-	version := buildVersion
-	if version == "" {
-		version = "N/A"
-	}
-
-	date := buildDate
-	if date == "" {
-		date = "N/A"
-	}
-
-	commit := buildCommit
-	if commit == "" {
-		commit = "N/A"
-	}
-
-	fmt.Printf("Build version: %s\n", version)
-	fmt.Printf("Build date: %s\n", date)
-	fmt.Printf("Build commit: %s\n", commit)
+	fmt.Printf("Build version: %s\n", buildVersion)
+	fmt.Printf("Build date: %s\n", buildDate)
+	fmt.Printf("Build commit: %s\n", buildCommit)
 }

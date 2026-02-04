@@ -71,7 +71,11 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 	id, err := h.Repo.CreateForUser(userID, originalURL)
 	if err != nil {
 		if errors.Is(err, repository.ErrURLExists) {
-			shortURL, _ := url.JoinPath(h.BaseURL, id)
+			shortURL, err := url.JoinPath(h.BaseURL, id)
+			if err != nil {
+				c.String(http.StatusInternalServerError, "failed to build short url")
+				return
+			}
 			c.String(http.StatusConflict, shortURL)
 			return
 		}

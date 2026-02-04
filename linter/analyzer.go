@@ -3,6 +3,7 @@ package linter
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -21,27 +22,29 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				return true
 			}
 
-			if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "panic" {
+			// panic(...)
+			if isPanicCall(call) {
 				pass.Reportf(call.Pos(), "usage of panic is forbidden")
+				return true
 			}
 
-			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-				if pkg, ok := sel.X.(*ast.Ident); ok {
-					if (pkg.Name == "log" && sel.Sel.Name == "Fatal") ||
-						(pkg.Name == "os" && sel.Sel.Name == "Exit") {
-
-						if file.Name.Name != "main" || !insideMainFunc(file, call.Pos()) {
-							pass.Reportf(
-								call.Pos(),
-								"%s.%s is allowed only in main.main",
-								pkg.Name,
-								sel.Sel.Name,
-							)
-						}
-					}
-				}
+			// log.Fatal(...) / os.Exit(...)
+			pkgPath, selName, ok := selectorPkgPathAndName(pass, call)
+			if !ok {
+				return true
 			}
 
+			// интересуют только log.Fatal и os.Exit
+			if !(pkgPath == "log" && selName == "Fatal") && !(pkgPath == "os" && selName == "Exit") {
+				return true
+			}
+
+			// разрешено только внутри main.main пакета main
+			if file.Name != nil && file.Name.Name == "main" && insideMainFunc(file, call.Pos()) {
+				return true
+			}
+
+			pass.Reportf(call.Pos(), "%s.%s is allowed only in main.main", pkgPath, selName)
 			return true
 		})
 	}
@@ -51,13 +54,40 @@ func run(pass *analysis.Pass) (interface{}, error) {
 func insideMainFunc(file *ast.File, pos token.Pos) bool {
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
+		if !ok || fn.Body == nil || fn.Name == nil || fn.Name.Name != "main" {
 			continue
 		}
-		if fn.Name.Name == "main" &&
-			pos >= fn.Body.Pos() && pos <= fn.Body.End() {
-			return true
-		}
+		return pos >= fn.Body.Pos() && pos <= fn.Body.End()
 	}
 	return false
+}
+
+func isPanicCall(call *ast.CallExpr) bool {
+	ident, ok := call.Fun.(*ast.Ident)
+	return ok && ident.Name == "panic"
+}
+
+// selectorPkgPathAndName возвращает путь пакета ("os"/"log") и имя селектора ("Exit"/"Fatal"),
+func selectorPkgPathAndName(pass *analysis.Pass, call *ast.CallExpr) (pkgPath string, selName string, ok bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", "", false
+	}
+
+	pkgIdent, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return "", "", false
+	}
+
+	obj := pass.TypesInfo.Uses[pkgIdent]
+	if obj == nil {
+		return "", "", false
+	}
+
+	pkgName, ok := obj.(*types.PkgName)
+	if !ok || pkgName.Imported() == nil {
+		return "", "", false
+	}
+
+	return pkgName.Imported().Path(), sel.Sel.Name, true
 }
