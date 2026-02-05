@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/gin-gonic/gin"
 )
@@ -14,7 +15,8 @@ func ExampleURLHandler_PostHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	h := NewURLHandler("http://localhost:8080", repo, nil)
+	publisher := &audit.Publisher{}
+	h := NewURLHandler("http://localhost:8080", repo, nil, publisher)
 
 	r := gin.New()
 	r.POST("/", h.PostHandler)
@@ -32,7 +34,8 @@ func ExampleURLHandler_ShortenHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	h := NewURLHandler("http://localhost:8080", repo, nil)
+	publisher := &audit.Publisher{}
+	h := NewURLHandler("http://localhost:8080", repo, nil, publisher)
 
 	r := gin.New()
 	r.POST("/api/shorten", h.ShortenHandler)
@@ -52,7 +55,8 @@ func ExampleURLHandler_PingHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	h := NewURLHandler("http://localhost:8080", repo, nil)
+	publisher := &audit.Publisher{}
+	h := NewURLHandler("http://localhost:8080", repo, nil, publisher)
 
 	r := gin.New()
 	r.GET("/ping", h.PingHandler)
