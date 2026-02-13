@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
@@ -15,56 +18,154 @@ type Config struct {
 	EnableHTTPS     bool
 }
 
+type FileConfig struct {
+	ServerAddress   string `json:"server_address"`
+	BaseURL         string `json:"base_url"`
+	FileStoragePath string `json:"file_storage_path"`
+	DatabaseDSN     string `json:"database_dsn"`
+	EnableHTTPS     *bool  `json:"enable_https"`
+	AuditFile       string `json:"audit_file"`
+	AuditURL        string `json:"audit_url"`
+}
+
 func Init() *Config {
-	addressFlag := flag.String("a", "127.0.0.1:8080", "адрес запуска HTTP-сервера")
-	baseURLFlag := flag.String("b", "http://localhost:8080", "базовый адрес сокращённого URL")
-	fileFlag := flag.String("f", "data.json", "путь до файла для хранения URL")
+	// ВАЖНО: флаги с дефолтом "" (чтобы не перетирать env/json, если флаг не задан)
+	addressFlag := flag.String("a", "", "адрес запуска HTTP-сервера")
+	baseURLFlag := flag.String("b", "", "базовый адрес сокращённого URL")
+	fileFlag := flag.String("f", "", "путь до файла для хранения URL")
 	dsnFlag := flag.String("d", "", "строка подключения к базе данных")
 	auditFileFlag := flag.String("audit-file", "", "путь к файлу аудита")
 	auditURLFlag := flag.String("audit-url", "", "url сервера аудита")
 	enableHTTPSFlag := flag.Bool("s", false, "enable HTTPS")
 
+	// путь к json конфигу
+	configPathShort := flag.String("c", "", "path to json config")
+	configPathLong := flag.String("config", "", "path to json config")
+
 	flag.Parse()
 
-	address := *addressFlag
-	baseURL := *baseURLFlag
-	filePath := *fileFlag
-	dsn := *dsnFlag
-	auditFile := *auditFileFlag
-	auditURL := *auditURLFlag
-	enableHTTPS := *enableHTTPSFlag
+	set := map[string]bool{}
+	flag.CommandLine.Visit(func(f *flag.Flag) {
+		set[f.Name] = true
+	})
 
-	if v, ok := os.LookupEnv("SERVER_ADDRESS"); ok {
-		address = v
+	// 1) Defaults (самый низкий приоритет)
+	cfg := &Config{
+		Address:         "127.0.0.1:8080",
+		BaseURL:         "http://localhost:8080",
+		FileStoragePath: "data.json",
+		DatabaseDSN:     "",
+		AuditFile:       "",
+		AuditURL:        "",
+		EnableHTTPS:     false,
 	}
-	if v, ok := os.LookupEnv("BASE_URL"); ok {
-		baseURL = v
+
+	// 2) JSON file (ниже env/flags)
+	configPath := ""
+	if *configPathShort != "" {
+		configPath = *configPathShort
+	} else if *configPathLong != "" {
+		configPath = *configPathLong
+	} else if v := os.Getenv("CONFIG"); v != "" {
+		configPath = v
 	}
-	if v, ok := os.LookupEnv("FILE_STORAGE_PATH"); ok {
-		filePath = v
-	}
-	if v, ok := os.LookupEnv("DATABASE_DSN"); ok {
-		dsn = v
-	}
-	if v, ok := os.LookupEnv("AUDIT_FILE"); ok {
-		auditFile = v
-	}
-	if v, ok := os.LookupEnv("AUDIT_URL"); ok {
-		auditURL = v
-	}
-	if v, ok := os.LookupEnv("ENABLE_HTTPS"); ok {
-		if v == "true" || v == "1" {
-			enableHTTPS = true
+
+	if configPath != "" {
+		fc, err := loadFileConfig(configPath)
+		if err != nil {
+			panic(err)
 		}
+		applyFileConfig(cfg, fc)
 	}
 
-	return &Config{
-		Address:         address,
-		BaseURL:         baseURL,
-		FileStoragePath: filePath,
-		DatabaseDSN:     dsn,
-		AuditFile:       auditFile,
-		AuditURL:        auditURL,
-		EnableHTTPS:     enableHTTPS,
+	// 3) ENV (выше файла, ниже флагов)
+	applyEnv(cfg)
+
+	// 4) FLAGS (самый высокий приоритет, применяем только если флаг реально задан)
+	if set["a"] {
+		cfg.Address = *addressFlag
+	}
+	if set["b"] {
+		cfg.BaseURL = *baseURLFlag
+	}
+	if set["f"] {
+		cfg.FileStoragePath = *fileFlag
+	}
+	if set["d"] {
+		cfg.DatabaseDSN = *dsnFlag
+	}
+	if set["audit-file"] {
+		cfg.AuditFile = *auditFileFlag
+	}
+	if set["audit-url"] {
+		cfg.AuditURL = *auditURLFlag
+	}
+	if set["s"] {
+		cfg.EnableHTTPS = *enableHTTPSFlag
+	}
+
+	return cfg
+}
+
+func loadFileConfig(path string) (FileConfig, error) {
+	var fc FileConfig
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fc, fmt.Errorf("read config file: %w", err)
+	}
+	if err := json.Unmarshal(b, &fc); err != nil {
+		return fc, fmt.Errorf("parse config json: %w", err)
+	}
+	return fc, nil
+}
+
+func applyFileConfig(dst *Config, fc FileConfig) {
+	if fc.ServerAddress != "" {
+		dst.Address = fc.ServerAddress
+	}
+	if fc.BaseURL != "" {
+		dst.BaseURL = fc.BaseURL
+	}
+	if fc.FileStoragePath != "" {
+		dst.FileStoragePath = fc.FileStoragePath
+	}
+	if fc.DatabaseDSN != "" {
+		dst.DatabaseDSN = fc.DatabaseDSN
+	}
+	if fc.AuditFile != "" {
+		dst.AuditFile = fc.AuditFile
+	}
+	if fc.AuditURL != "" {
+		dst.AuditURL = fc.AuditURL
+	}
+	if fc.EnableHTTPS != nil {
+		dst.EnableHTTPS = *fc.EnableHTTPS
+	}
+}
+
+func applyEnv(dst *Config) {
+	if v := os.Getenv("SERVER_ADDRESS"); v != "" {
+		dst.Address = v
+	}
+	if v := os.Getenv("BASE_URL"); v != "" {
+		dst.BaseURL = v
+	}
+	if v := os.Getenv("FILE_STORAGE_PATH"); v != "" {
+		dst.FileStoragePath = v
+	}
+	if v := os.Getenv("DATABASE_DSN"); v != "" {
+		dst.DatabaseDSN = v
+	}
+	if v := os.Getenv("AUDIT_FILE"); v != "" {
+		dst.AuditFile = v
+	}
+	if v := os.Getenv("AUDIT_URL"); v != "" {
+		dst.AuditURL = v
+	}
+	if v := os.Getenv("ENABLE_HTTPS"); v != "" {
+		// поддержка: true/false/1/0
+		if b, err := strconv.ParseBool(v); err == nil {
+			dst.EnableHTTPS = b
+		}
 	}
 }
