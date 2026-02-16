@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/config"
@@ -38,14 +41,17 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	var repo repository.Repository
+	var (
+		repo      repository.Repository
+		poolClose func()
+	)
 
 	if cfg.DatabaseDSN != "" {
 		pool, err := db.NewPostgresPool(context.Background(), cfg.DatabaseDSN, "file://migrations")
 		if err != nil {
 			logger.Fatal("failed to connect to database", zap.Error(err))
 		}
-		defer pool.Close()
+		poolClose = pool.Close
 
 		repo = repository.NewPostgresRepository(pool)
 		logger.Info("Using PostgreSQL storage")
@@ -57,19 +63,25 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
+	// гарантируем закрытие пула БД при остановке
+	defer func() {
+		if poolClose != nil {
+			poolClose()
+		}
+	}()
+
 	publisher := audit.NewPublisher()
 
 	if cfg.AuditFile != "" {
 		publisher.Subscribe(audit.NewFileObserver(cfg.AuditFile))
 	}
-
 	if cfg.AuditURL != "" {
 		publisher.Subscribe(audit.NewHTTPObserver(cfg.AuditURL))
 	}
 
 	deleteWorker := worker.NewDeleteWorker(repo, 1000)
-	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, publisher)
 
+	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, publisher)
 	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
 	srv := &http.Server{
@@ -82,16 +94,57 @@ func main() {
 		zap.Bool("https", cfg.EnableHTTPS),
 	)
 
-	var err error
-	if cfg.EnableHTTPS {
-		err = srv.ListenAndServeTLS("cert.pem", "key.pem")
-	} else {
-		err = srv.ListenAndServe()
+	// запускаем сервер в отдельной горутине, чтобы main мог ловить сигналы
+	errCh := make(chan error, 1)
+	go func() {
+		if cfg.EnableHTTPS {
+			errCh <- srv.ListenAndServeTLS("cert.pem", "key.pem")
+			return
+		}
+		errCh <- srv.ListenAndServe()
+	}()
+
+	// ловим сигналы завершения
+	sigCtx, stop := signal.NotifyContext(context.Background(),
+		syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT,
+	)
+	defer stop()
+
+	// ждём либо сигнал, либо падение сервера
+	select {
+	case <-sigCtx.Done():
+		logger.Info("Shutdown signal received")
+	case err := <-errCh:
+		// если сервер сам завершился
+		if err != nil && err != http.ErrServerClosed {
+			logger.Fatal("Server failed", zap.Error(err))
+		}
+		// http.ErrServerClosed = норм при shutdown
+		return
 	}
 
-	if err != nil && err != http.ErrServerClosed {
-		logger.Fatal("Failed to start server", zap.Error(err))
+	// graceful shutdown: дождаться активных запросов
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown failed", zap.Error(err))
+	} else {
+		logger.Info("HTTP server stopped gracefully")
 	}
+
+	deleteWorker.Stop()
+
+	// сохранить несохранённые данные (актуально для file/in-memory репо)
+	if s, ok := repo.(interface{ Save() error }); ok {
+		if err := s.Save(); err != nil {
+			logger.Error("Failed to save repository", zap.Error(err))
+		} else {
+			logger.Info("Repository saved")
+		}
+	}
+
+	logger.Info("Shutdown complete")
 }
 
 func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
@@ -108,7 +161,6 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.POST("/api/shorten", h.ShortenHandler)
 	r.POST("/api/shorten/batch", h.ShortenBatchHandler)
 	r.GET("/api/user/urls", h.GetUserURLs)
-
 	r.DELETE("/api/user/urls", h.DeleteUserURLs)
 
 	return r
