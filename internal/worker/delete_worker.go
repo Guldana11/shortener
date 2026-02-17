@@ -31,6 +31,8 @@ func NewDeleteWorker(repo repository.Repository, bufferSize int) *DeleteWorker {
 }
 
 func (w *DeleteWorker) run() {
+	defer w.wg.Done()
+
 	for task := range w.TaskQueue {
 		_ = w.Repo.MarkAsDeleted(task.UserID, task.IDs)
 	}

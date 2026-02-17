@@ -28,7 +28,7 @@ type FileConfig struct {
 	AuditURL        string `json:"audit_url"`
 }
 
-func Init() *Config {
+func Init() (*Config, error) {
 	// ВАЖНО: флаги с дефолтом "" (чтобы не перетирать env/json, если флаг не задан)
 	addressFlag := flag.String("a", "", "адрес запуска HTTP-сервера")
 	baseURLFlag := flag.String("b", "", "базовый адрес сокращённого URL")
@@ -73,7 +73,7 @@ func Init() *Config {
 	if configPath != "" {
 		fc, err := loadFileConfig(configPath)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("failed to load config file: %w", err)
 		}
 		applyFileConfig(cfg, fc)
 	}
@@ -104,7 +104,7 @@ func Init() *Config {
 		cfg.EnableHTTPS = *enableHTTPSFlag
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 func loadFileConfig(path string) (FileConfig, error) {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os/signal"
@@ -37,7 +38,11 @@ func main() {
 		}
 	}()
 
-	cfg := config.Init()
+	cfg, err := config.Init()
+	if err != nil {
+		log.Fatalf("failed to init config: %v", err)
+	}
+
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
