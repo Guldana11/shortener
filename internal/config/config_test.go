@@ -94,7 +94,11 @@ func TestInit(t *testing.T) {
 
 			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-			got := Init()
+			got, err := Init()
+			if err != nil {
+				t.Fatalf("Init() returned error: %v", err)
+			}
+
 			if !reflect.DeepEqual(got, tt.wantConfig) {
 				t.Errorf("Init() = %+v, want %+v", got, tt.wantConfig)
 			}
