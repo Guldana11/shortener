@@ -8,9 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"time"
 
-	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/model"
 	"github.com/Guldana11/shortener/internal/repository"
 	"github.com/Guldana11/shortener/internal/service"
@@ -33,18 +31,18 @@ type URLHandler struct {
 	BaseURL       string
 	logger        *zap.Logger
 	DeleteWorker  DeleteWorkerInterface
-	Publisher     *audit.Publisher
+	Svc           *service.URLService
 	TrustedSubnet *net.IPNet
 }
 
-func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, publisher *audit.Publisher, trustedSubnet string) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, svc *service.URLService, trustedSubnet string) *URLHandler {
 	logger, _ := zap.NewProduction()
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      baseURL,
 		logger:       logger,
 		DeleteWorker: dw,
-		Publisher:    publisher,
+		Svc:          svc,
 	}
 	if trustedSubnet != "" {
 		_, ipNet, err := net.ParseCIDR(trustedSubnet)
@@ -75,40 +73,17 @@ func (h *URLHandler) PostHandler(c *gin.Context) {
 		return
 	}
 
-	originalURL := string(body)
-
-	id, err := h.Repo.CreateForUser(userID, originalURL)
+	result, err := h.Svc.ShortenURL(userID, string(body))
 	if err != nil {
-		if errors.Is(err, repository.ErrURLExists) {
-			shortURL, err := url.JoinPath(h.BaseURL, id)
-			if err != nil {
-				c.String(http.StatusInternalServerError, "failed to build short url")
-				return
-			}
-			c.String(http.StatusConflict, shortURL)
-			return
-		}
-		h.logger.Error("failed to create URL", zap.Error(err))
 		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 		return
 	}
-
-	shortURL, err := url.JoinPath(h.BaseURL, id)
-	if err != nil {
-		h.logger.Error("failed to join URL path", zap.Error(err))
-		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+	if result.Conflict {
+		c.String(http.StatusConflict, result.ShortURL)
 		return
 	}
 
-	c.String(http.StatusCreated, shortURL)
-
-	h.Publisher.Publish(audit.Event{
-		TS:     time.Now().Unix(),
-		Action: "shorten",
-		UserID: userID,
-		URL:    originalURL,
-	})
-
+	c.String(http.StatusCreated, result.ShortURL)
 }
 
 // GET /:id
@@ -119,7 +94,7 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 		return
 	}
 
-	original, err := h.Repo.Get(id)
+	original, err := h.Svc.ExpandURL(id)
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrNotFound):
@@ -133,21 +108,10 @@ func (h *URLHandler) GetHandler(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusTemporaryRedirect, original)
-
-	userID, _ := service.ValidateUserCookie(c.Request)
-
-	h.Publisher.Publish(audit.Event{
-		TS:     time.Now().Unix(),
-		Action: "follow",
-		UserID: userID,
-		URL:    original,
-	})
-
 }
 
 // POST /api/shorten
 func (h *URLHandler) ShortenHandler(c *gin.Context) {
-	// Получаем userID
 	userID, err := service.ValidateUserCookie(c.Request)
 	if err != nil || userID == "" {
 		cookie := service.GenerateUserCookie()
@@ -162,39 +126,17 @@ func (h *URLHandler) ShortenHandler(c *gin.Context) {
 		return
 	}
 
-	id, err := h.Repo.CreateForUser(userID, req.URL)
+	result, err := h.Svc.ShortenURL(userID, req.URL)
 	if err != nil {
-		if errors.Is(err, repository.ErrURLExists) {
-			shortURL, _ := url.JoinPath(h.BaseURL, id)
-			c.JSON(http.StatusConflict, model.ShortenResponse{
-				Result: shortURL,
-			})
-			return
-		}
-
-		h.logger.Error("failed to create URL", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
 		return
 	}
-
-	shortURL, err := url.JoinPath(h.BaseURL, id)
-	if err != nil {
-		h.logger.Error("failed to join URL path", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+	if result.Conflict {
+		c.JSON(http.StatusConflict, model.ShortenResponse{Result: result.ShortURL})
 		return
 	}
 
-	c.JSON(http.StatusCreated, model.ShortenResponse{
-		Result: shortURL,
-	})
-
-	h.Publisher.Publish(audit.Event{
-		TS:     time.Now().Unix(),
-		Action: "shorten",
-		UserID: userID,
-		URL:    req.URL,
-	})
-
+	c.JSON(http.StatusCreated, model.ShortenResponse{Result: result.ShortURL})
 }
 
 // GET /ping
@@ -278,7 +220,7 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 		return
 	}
 
-	urls := h.Repo.GetAllForUser(userID.(string))
+	urls := h.Svc.ListUserURLs(userID.(string))
 	if len(urls) == 0 {
 		c.Status(http.StatusNoContent)
 		return
@@ -290,16 +232,10 @@ func (h *URLHandler) GetUserURLs(c *gin.Context) {
 	}
 
 	resp := make([]respPair, 0, len(urls))
-	for id, original := range urls {
-		shortURL, err := url.JoinPath(h.BaseURL, id)
-		if err != nil {
-			h.logger.Error("failed to build short URL", zap.Error(err), zap.String("id", id))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
-			return
-		}
+	for _, u := range urls {
 		resp = append(resp, respPair{
-			ShortURL:    shortURL,
-			OriginalURL: original,
+			ShortURL:    u.ShortURL,
+			OriginalURL: u.OriginalURL,
 		})
 	}
 

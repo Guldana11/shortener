@@ -105,16 +105,24 @@ func (m *mockPublisher) Publish(data interface{}) error {
 	return nil
 }
 
+func newTestSvc(repo repository.Repository) *service.URLService {
+	return &service.URLService{
+		Repo:      repo,
+		BaseURL:   "http://localhost:8080",
+		Publisher: audit.NewPublisher(),
+		Logger:    zap.NewNop(),
+	}
+}
+
 func TestPostHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
-	pub := &audit.Publisher{}
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      "http://localhost:8080",
 		logger:       zap.NewNop(),
 		DeleteWorker: &mockDeleteWorker{},
-		Publisher:    pub,
+		Svc:          newTestSvc(repo),
 	}
 
 	rec := httptest.NewRecorder()
@@ -137,12 +145,11 @@ func TestGetHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
 	id, _ := repo.CreateForUser("user1", "https://example.com")
-	pub := &audit.Publisher{}
 	h := &URLHandler{
-		Repo:      repo,
-		BaseURL:   "http://localhost:8080",
-		logger:    zap.NewNop(),
-		Publisher: pub,
+		Repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  zap.NewNop(),
+		Svc:     newTestSvc(repo),
 	}
 
 	rec := httptest.NewRecorder()
@@ -164,13 +171,12 @@ func TestGetHandler(t *testing.T) {
 func TestShortenHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
-	pub := &audit.Publisher{}
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      "http://localhost:8080",
 		logger:       zap.NewNop(),
 		DeleteWorker: &mockDeleteWorker{},
-		Publisher:    pub,
+		Svc:          newTestSvc(repo),
 	}
 
 	body := `{"url":"https://example.com"}`
@@ -261,7 +267,7 @@ func TestStatsHandler(t *testing.T) {
 			repo.CreateForUser("user1", "https://example.com")
 			repo.CreateForUser("user2", "https://example.org")
 
-			h := NewURLHandler("http://localhost:8080", repo, &mockDeleteWorker{}, &audit.Publisher{}, tt.subnet)
+			h := NewURLHandler("http://localhost:8080", repo, &mockDeleteWorker{}, newTestSvc(repo), tt.subnet)
 
 			rec := httptest.NewRecorder()
 			c, r := gin.CreateTestContext(rec)

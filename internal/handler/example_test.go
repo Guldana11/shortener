@@ -7,7 +7,9 @@ import (
 
 	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/service"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // ExampleURLHandler_PostHandler демонстрирует создание короткого URL через POST /
@@ -15,8 +17,9 @@ func ExampleURLHandler_PostHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	publisher := &audit.Publisher{}
-	h := NewURLHandler("http://localhost:8080", repo, nil, publisher, "")
+	publisher := audit.NewPublisher()
+	svc := &service.URLService{Repo: repo, BaseURL: "http://localhost:8080", Publisher: publisher, Logger: zap.NewNop()}
+	h := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
 
 	r := gin.New()
 	r.POST("/", h.PostHandler)
@@ -34,8 +37,9 @@ func ExampleURLHandler_ShortenHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	publisher := &audit.Publisher{}
-	h := NewURLHandler("http://localhost:8080", repo, nil, publisher, "")
+	publisher := audit.NewPublisher()
+	svc := &service.URLService{Repo: repo, BaseURL: "http://localhost:8080", Publisher: publisher, Logger: zap.NewNop()}
+	h := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
 
 	r := gin.New()
 	r.POST("/api/shorten", h.ShortenHandler)
@@ -55,8 +59,9 @@ func ExampleURLHandler_PingHandler() {
 	gin.SetMode(gin.TestMode)
 
 	repo := repository.NewURLRepository("")
-	publisher := &audit.Publisher{}
-	h := NewURLHandler("http://localhost:8080", repo, nil, publisher, "")
+	publisher := audit.NewPublisher()
+	svc := &service.URLService{Repo: repo, BaseURL: "http://localhost:8080", Publisher: publisher, Logger: zap.NewNop()}
+	h := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
 
 	r := gin.New()
 	r.GET("/ping", h.PingHandler)

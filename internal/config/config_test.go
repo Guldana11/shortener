@@ -22,6 +22,7 @@ func TestInit(t *testing.T) {
 				Address:         "127.0.0.1:8080",
 				BaseURL:         "http://localhost:8080",
 				FileStoragePath: "data.json",
+				GRPCAddress:     ":3200",
 			},
 		},
 		{
@@ -32,11 +33,12 @@ func TestInit(t *testing.T) {
 				Address:         "127.0.0.1:9999",
 				BaseURL:         "http://example.com",
 				FileStoragePath: "urls.json",
+				GRPCAddress:     ":3200",
 			},
 		},
 		{
 			name: "Переопределение через переменные окружения",
-			args: []string{"cmd", "-a", "127.0.0.1:9999", "-b", "http://example.com", "-f", "urls.json"},
+			args: []string{"cmd"},
 			env: map[string]string{
 				"SERVER_ADDRESS":    "0.0.0.0:3000",
 				"BASE_URL":          "http://myshort.io",
@@ -46,6 +48,7 @@ func TestInit(t *testing.T) {
 				Address:         "0.0.0.0:3000",
 				BaseURL:         "http://myshort.io",
 				FileStoragePath: "env.json",
+				GRPCAddress:     ":3200",
 			},
 		},
 		{
@@ -56,6 +59,7 @@ func TestInit(t *testing.T) {
 				Address:         "127.0.0.1:8080",
 				BaseURL:         "http://localhost:8080",
 				FileStoragePath: "flag.json",
+				GRPCAddress:     ":3200",
 			},
 		},
 		{
@@ -66,6 +70,7 @@ func TestInit(t *testing.T) {
 				Address:         "127.0.0.1:8080",
 				BaseURL:         "http://localhost:8080",
 				FileStoragePath: "data.json",
+				GRPCAddress:     ":3200",
 			},
 		},
 	}

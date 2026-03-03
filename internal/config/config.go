@@ -17,6 +17,7 @@ type Config struct {
 	AuditURL        string
 	EnableHTTPS     bool
 	TrustedSubnet   string
+	GRPCAddress     string
 }
 
 type FileConfig struct {
@@ -28,6 +29,7 @@ type FileConfig struct {
 	AuditFile       string `json:"audit_file"`
 	AuditURL        string `json:"audit_url"`
 	TrustedSubnet   string `json:"trusted_subnet"`
+	GRPCAddress     string `json:"grpc_address"`
 }
 
 func Init() (*Config, error) {
@@ -40,6 +42,7 @@ func Init() (*Config, error) {
 	auditURLFlag := flag.String("audit-url", "", "url сервера аудита")
 	enableHTTPSFlag := flag.Bool("s", false, "enable HTTPS")
 	trustedSubnetFlag := flag.String("t", "", "CIDR trusted subnet")
+	grpcAddressFlag := flag.String("g", "", "адрес gRPC-сервера")
 
 	// путь к json конфигу
 	configPathShort := flag.String("c", "", "path to json config")
@@ -61,6 +64,7 @@ func Init() (*Config, error) {
 		AuditFile:       "",
 		AuditURL:        "",
 		EnableHTTPS:     false,
+		GRPCAddress:     ":3200",
 	}
 
 	// 2) JSON file (ниже env/flags)
@@ -109,6 +113,9 @@ func Init() (*Config, error) {
 	if set["t"] {
 		cfg.TrustedSubnet = *trustedSubnetFlag
 	}
+	if set["g"] {
+		cfg.GRPCAddress = *grpcAddressFlag
+	}
 
 	return cfg, nil
 }
@@ -150,6 +157,9 @@ func applyFileConfig(dst *Config, fc FileConfig) {
 	if fc.TrustedSubnet != "" {
 		dst.TrustedSubnet = fc.TrustedSubnet
 	}
+	if fc.GRPCAddress != "" {
+		dst.GRPCAddress = fc.GRPCAddress
+	}
 }
 
 func applyEnv(dst *Config) {
@@ -179,5 +189,8 @@ func applyEnv(dst *Config) {
 	}
 	if v := os.Getenv("TRUSTED_SUBNET"); v != "" {
 		dst.TrustedSubnet = v
+	}
+	if v := os.Getenv("GRPC_ADDRESS"); v != "" {
+		dst.GRPCAddress = v
 	}
 }
