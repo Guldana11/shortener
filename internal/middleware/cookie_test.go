@@ -32,7 +32,9 @@ func TestUserCookieMiddleware_NoCookie(t *testing.T) {
 		t.Error("userID не установлен в контексте")
 	}
 
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	if len(cookies) == 0 {
 		t.Error("cookie должен быть установлен для нового пользователя")
 	}
@@ -90,7 +92,9 @@ func TestUserCookieMiddleware_InvalidCookie(t *testing.T) {
 		t.Error("userID должен быть установлен даже для невалидной cookie")
 	}
 
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	if len(cookies) == 0 {
 		t.Error("новая cookie должна быть установлена при невалидной")
 	}
