@@ -87,6 +87,14 @@ func (m *mockRepo) MarkAsDeleted(userID string, ids []string) error {
 	return nil
 }
 
+func (m *mockRepo) GetStats(ctx context.Context) (int, int, error) {
+	var urls int
+	for _, userStore := range m.store {
+		urls += len(userStore)
+	}
+	return urls, len(m.store), nil
+}
+
 type mockDeleteWorker struct{}
 
 func (m *mockDeleteWorker) EnqueueDeletion(userID string, ids []string) {}

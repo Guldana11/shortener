@@ -134,6 +134,20 @@ func (r *PostgresRepository) Ping(ctx context.Context) error {
 	return r.db.Ping(ctx)
 }
 
+// GetStats возвращает количество URL и уникальных пользователей.
+func (r *PostgresRepository) GetStats(ctx context.Context) (int, int, error) {
+	var urls, users int
+	err := r.db.QueryRow(ctx, "SELECT COUNT(*) FROM urls").Scan(&urls)
+	if err != nil {
+		return 0, 0, err
+	}
+	err = r.db.QueryRow(ctx, "SELECT COUNT(DISTINCT user_id) FROM urls").Scan(&users)
+	if err != nil {
+		return 0, 0, err
+	}
+	return urls, users, nil
+}
+
 // MarkAsDeleted помечает указанные URL пользователя как удалённые.
 func (r *PostgresRepository) MarkAsDeleted(userID string, ids []string) error {
 	if len(ids) == 0 {

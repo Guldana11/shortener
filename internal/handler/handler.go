@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -28,22 +29,30 @@ type DeleteWorkerInterface interface {
 }
 
 type URLHandler struct {
-	Repo         repository.Repository
-	BaseURL      string
-	logger       *zap.Logger
-	DeleteWorker DeleteWorkerInterface
-	Publisher    *audit.Publisher
+	Repo          repository.Repository
+	BaseURL       string
+	logger        *zap.Logger
+	DeleteWorker  DeleteWorkerInterface
+	Publisher     *audit.Publisher
+	TrustedSubnet *net.IPNet
 }
 
-func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, publisher *audit.Publisher) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, publisher *audit.Publisher, trustedSubnet string) *URLHandler {
 	logger, _ := zap.NewProduction()
-	return &URLHandler{
+	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      baseURL,
 		logger:       logger,
 		DeleteWorker: dw,
 		Publisher:    publisher,
 	}
+	if trustedSubnet != "" {
+		_, ipNet, err := net.ParseCIDR(trustedSubnet)
+		if err == nil {
+			h.TrustedSubnet = ipNet
+		}
+	}
+	return h
 }
 
 // POST /
@@ -314,6 +323,32 @@ func (h *URLHandler) DeleteUserURLs(c *gin.Context) {
 	h.DeleteWorker.EnqueueDeletion(userID, ids)
 
 	c.Status(http.StatusAccepted)
+}
+
+// GET /api/internal/stats
+func (h *URLHandler) StatsHandler(c *gin.Context) {
+	if h.TrustedSubnet == nil {
+		c.String(http.StatusForbidden, http.StatusText(http.StatusForbidden))
+		return
+	}
+
+	ip := net.ParseIP(c.GetHeader("X-Real-IP"))
+	if ip == nil || !h.TrustedSubnet.Contains(ip) {
+		c.String(http.StatusForbidden, http.StatusText(http.StatusForbidden))
+		return
+	}
+
+	urls, users, err := h.Repo.GetStats(c)
+	if err != nil {
+		h.logger.Error("failed to get stats", zap.Error(err))
+		c.String(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"urls":  urls,
+		"users": users,
+	})
 }
 
 func containsSlash(s string) bool {
