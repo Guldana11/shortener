@@ -12,6 +12,7 @@ type Config struct {
 	DatabaseDSN     string
 	AuditFile       string
 	AuditURL        string
+	EnableHTTPS     bool
 }
 
 func Init() *Config {
@@ -21,6 +22,7 @@ func Init() *Config {
 	dsnFlag := flag.String("d", "", "строка подключения к базе данных")
 	auditFileFlag := flag.String("audit-file", "", "путь к файлу аудита")
 	auditURLFlag := flag.String("audit-url", "", "url сервера аудита")
+	enableHTTPSFlag := flag.Bool("s", false, "enable HTTPS")
 
 	flag.Parse()
 
@@ -30,6 +32,7 @@ func Init() *Config {
 	dsn := *dsnFlag
 	auditFile := *auditFileFlag
 	auditURL := *auditURLFlag
+	enableHTTPS := *enableHTTPSFlag
 
 	if v, ok := os.LookupEnv("SERVER_ADDRESS"); ok {
 		address = v
@@ -49,6 +52,11 @@ func Init() *Config {
 	if v, ok := os.LookupEnv("AUDIT_URL"); ok {
 		auditURL = v
 	}
+	if v, ok := os.LookupEnv("ENABLE_HTTPS"); ok {
+		if v == "true" || v == "1" {
+			enableHTTPS = true
+		}
+	}
 
 	return &Config{
 		Address:         address,
@@ -57,5 +65,6 @@ func Init() *Config {
 		DatabaseDSN:     dsn,
 		AuditFile:       auditFile,
 		AuditURL:        auditURL,
+		EnableHTTPS:     enableHTTPS,
 	}
 }

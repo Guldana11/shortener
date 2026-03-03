@@ -72,7 +72,24 @@ func main() {
 
 	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
-	if err := r.Run(cfg.Address); err != nil {
+	srv := &http.Server{
+		Addr:    cfg.Address,
+		Handler: r,
+	}
+
+	logger.Info("Server is starting...",
+		zap.String("address", cfg.Address),
+		zap.Bool("https", cfg.EnableHTTPS),
+	)
+
+	var err error
+	if cfg.EnableHTTPS {
+		err = srv.ListenAndServeTLS("cert.pem", "key.pem")
+	} else {
+		err = srv.ListenAndServe()
+	}
+
+	if err != nil && err != http.ErrServerClosed {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}
 }
