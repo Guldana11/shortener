@@ -19,7 +19,7 @@ func ExampleURLHandler_PostHandler() {
 	repo := repository.NewURLRepository("")
 	publisher := audit.NewPublisher()
 	svc := &service.URLService{Repo: repo, BaseURL: "http://localhost:8080", Publisher: publisher, Logger: zap.NewNop()}
-	h := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
+	h, _ := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
 
 	r := gin.New()
 	r.POST("/", h.PostHandler)
@@ -39,7 +39,7 @@ func ExampleURLHandler_ShortenHandler() {
 	repo := repository.NewURLRepository("")
 	publisher := audit.NewPublisher()
 	svc := &service.URLService{Repo: repo, BaseURL: "http://localhost:8080", Publisher: publisher, Logger: zap.NewNop()}
-	h := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
+	h, _ := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
 
 	r := gin.New()
 	r.POST("/api/shorten", h.ShortenHandler)
@@ -61,7 +61,7 @@ func ExampleURLHandler_PingHandler() {
 	repo := repository.NewURLRepository("")
 	publisher := audit.NewPublisher()
 	svc := &service.URLService{Repo: repo, BaseURL: "http://localhost:8080", Publisher: publisher, Logger: zap.NewNop()}
-	h := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
+	h, _ := NewURLHandler("http://localhost:8080", repo, nil, svc, "")
 
 	r := gin.New()
 	r.GET("/ping", h.PingHandler)

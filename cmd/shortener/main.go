@@ -99,7 +99,10 @@ func main() {
 		Logger:    logger,
 	}
 
-	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, svc, cfg.TrustedSubnet)
+	h, err := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, svc, cfg.TrustedSubnet)
+	if err != nil {
+		logger.Fatal("failed to create handler", zap.Error(err))
+	}
 	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
 	srv := &http.Server{
@@ -113,7 +116,7 @@ func main() {
 	)
 
 	// запускаем HTTP-сервер в отдельной горутине
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() {
 		if cfg.EnableHTTPS {
 			errCh <- srv.ListenAndServeTLS("cert.pem", "key.pem")
@@ -141,7 +144,7 @@ func main() {
 	go func() {
 		logger.Info("gRPC server is starting...", zap.String("address", cfg.GRPCAddress))
 		if err := grpcSrv.Serve(grpcLis); err != nil {
-			logger.Error("gRPC server failed", zap.Error(err))
+			errCh <- err
 		}
 	}()
 

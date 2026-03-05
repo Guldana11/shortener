@@ -14,10 +14,17 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// URLShortener defines the service interface used by the gRPC layer.
+type URLShortener interface {
+	ShortenURL(userID, originalURL string) (service.ShortenResult, error)
+	ExpandURL(id string) (string, error)
+	ListUserURLs(userID string) []service.URLPair
+}
+
 // ShortenerServer implements the gRPC ShortenerService.
 type ShortenerServer struct {
 	pb.UnimplementedShortenerServiceServer
-	Svc *service.URLService
+	Svc URLShortener
 }
 
 func (s *ShortenerServer) ShortenURL(ctx context.Context, req *pb.URLShortenRequest) (*pb.URLShortenResponse, error) {

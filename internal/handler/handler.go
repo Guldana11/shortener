@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -35,7 +36,7 @@ type URLHandler struct {
 	TrustedSubnet *net.IPNet
 }
 
-func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, svc *service.URLService, trustedSubnet string) *URLHandler {
+func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerInterface, svc *service.URLService, trustedSubnet string) (*URLHandler, error) {
 	logger, _ := zap.NewProduction()
 	h := &URLHandler{
 		Repo:         repo,
@@ -46,11 +47,12 @@ func NewURLHandler(baseURL string, repo repository.Repository, dw DeleteWorkerIn
 	}
 	if trustedSubnet != "" {
 		_, ipNet, err := net.ParseCIDR(trustedSubnet)
-		if err == nil {
-			h.TrustedSubnet = ipNet
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted_subnet %q: %w", trustedSubnet, err)
 		}
+		h.TrustedSubnet = ipNet
 	}
-	return h
+	return h, nil
 }
 
 // POST /

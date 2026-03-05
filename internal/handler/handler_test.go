@@ -267,7 +267,7 @@ func TestStatsHandler(t *testing.T) {
 			repo.CreateForUser("user1", "https://example.com")
 			repo.CreateForUser("user2", "https://example.org")
 
-			h := NewURLHandler("http://localhost:8080", repo, &mockDeleteWorker{}, newTestSvc(repo), tt.subnet)
+			h, _ := NewURLHandler("http://localhost:8080", repo, &mockDeleteWorker{}, newTestSvc(repo), tt.subnet)
 
 			rec := httptest.NewRecorder()
 			c, r := gin.CreateTestContext(rec)
