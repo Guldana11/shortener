@@ -105,16 +105,24 @@ func (m *mockPublisher) Publish(data interface{}) error {
 	return nil
 }
 
+func newTestSvc(repo repository.Repository) *service.URLService {
+	return &service.URLService{
+		Repo:      repo,
+		BaseURL:   "http://localhost:8080",
+		Publisher: audit.NewPublisher(),
+		Logger:    zap.NewNop(),
+	}
+}
+
 func TestPostHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
-	pub := &audit.Publisher{}
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      "http://localhost:8080",
 		logger:       zap.NewNop(),
 		DeleteWorker: &mockDeleteWorker{},
-		Publisher:    pub,
+		Svc:          newTestSvc(repo),
 	}
 
 	rec := httptest.NewRecorder()
@@ -137,12 +145,11 @@ func TestGetHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
 	id, _ := repo.CreateForUser("user1", "https://example.com")
-	pub := &audit.Publisher{}
 	h := &URLHandler{
-		Repo:      repo,
-		BaseURL:   "http://localhost:8080",
-		logger:    zap.NewNop(),
-		Publisher: pub,
+		Repo:    repo,
+		BaseURL: "http://localhost:8080",
+		logger:  zap.NewNop(),
+		Svc:     newTestSvc(repo),
 	}
 
 	rec := httptest.NewRecorder()
@@ -164,13 +171,12 @@ func TestGetHandler(t *testing.T) {
 func TestShortenHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockRepo(nil)
-	pub := &audit.Publisher{}
 	h := &URLHandler{
 		Repo:         repo,
 		BaseURL:      "http://localhost:8080",
 		logger:       zap.NewNop(),
 		DeleteWorker: &mockDeleteWorker{},
-		Publisher:    pub,
+		Svc:          newTestSvc(repo),
 	}
 
 	body := `{"url":"https://example.com"}`
@@ -217,6 +223,79 @@ func TestPingHandler(t *testing.T) {
 		if string(body) != tt.body {
 			t.Errorf("expected body '%s', got '%s'", tt.body, string(body))
 		}
+	}
+}
+
+func TestStatsHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		subnet     string
+		xRealIP    string
+		wantStatus int
+	}{
+		{
+			name:       "Нет trusted subnet — 403",
+			subnet:     "",
+			xRealIP:    "192.168.1.5",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "Нет X-Real-IP — 403",
+			subnet:     "192.168.1.0/24",
+			xRealIP:    "",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "IP вне подсети — 403",
+			subnet:     "192.168.1.0/24",
+			xRealIP:    "10.0.0.1",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "IP в подсети — 200",
+			subnet:     "192.168.1.0/24",
+			xRealIP:    "192.168.1.55",
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newMockRepo(nil)
+			repo.CreateForUser("user1", "https://example.com")
+			repo.CreateForUser("user2", "https://example.org")
+
+			h, _ := NewURLHandler("http://localhost:8080", repo, &mockDeleteWorker{}, newTestSvc(repo), tt.subnet)
+
+			rec := httptest.NewRecorder()
+			c, r := gin.CreateTestContext(rec)
+			r.GET("/api/internal/stats", h.StatsHandler)
+			req := httptest.NewRequest(http.MethodGet, "/api/internal/stats", nil)
+			if tt.xRealIP != "" {
+				req.Header.Set("X-Real-IP", tt.xRealIP)
+			}
+			c.Request = req
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d", tt.wantStatus, rec.Code)
+			}
+
+			if tt.wantStatus == http.StatusOK {
+				var resp map[string]int
+				if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+				if resp["urls"] != 2 {
+					t.Errorf("expected urls=2, got %d", resp["urls"])
+				}
+				if resp["users"] != 2 {
+					t.Errorf("expected users=2, got %d", resp["users"])
+				}
+			}
+		})
 	}
 }
 

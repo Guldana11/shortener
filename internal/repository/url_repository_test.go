@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -117,6 +118,62 @@ func TestURLRepository_MarkAsDeleted(t *testing.T) {
 	}
 	if _, err := r.Get("id2"); err != nil {
 		t.Errorf("URL id2 не должен быть удалён: %v", err)
+	}
+}
+
+func TestURLRepository_GetStats(t *testing.T) {
+	tests := []struct {
+		name      string
+		store     map[string]map[string]string
+		wantURLs  int
+		wantUsers int
+	}{
+		{
+			name:      "Пустое хранилище",
+			store:     map[string]map[string]string{},
+			wantURLs:  0,
+			wantUsers: 0,
+		},
+		{
+			name: "Один пользователь с двумя URL",
+			store: map[string]map[string]string{
+				"user1": {
+					"id1": "https://a.com",
+					"id2": "https://b.com",
+				},
+			},
+			wantURLs:  2,
+			wantUsers: 1,
+		},
+		{
+			name: "Два пользователя",
+			store: map[string]map[string]string{
+				"user1": {"id1": "https://a.com"},
+				"user2": {"id2": "https://b.com", "id3": "https://c.com"},
+			},
+			wantURLs:  3,
+			wantUsers: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &URLRepository{
+				store: tt.store,
+				mu:    sync.RWMutex{},
+			}
+
+			urls, users, err := r.GetStats(context.Background())
+			if err != nil {
+				t.Fatalf("GetStats вернул ошибку: %v", err)
+			}
+			if urls != tt.wantURLs {
+				t.Errorf("ожидали urls=%d, получили %d", tt.wantURLs, urls)
+			}
+			if users != tt.wantUsers {
+				t.Errorf("ожидали users=%d, получили %d", tt.wantUsers, users)
+			}
+		})
 	}
 }
 

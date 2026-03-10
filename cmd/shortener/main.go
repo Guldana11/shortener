@@ -4,23 +4,29 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os/signal"
 	"syscall"
 	"time"
 
+	pb "github.com/Guldana11/shortener/api/shortener"
 	"github.com/Guldana11/shortener/internal/audit"
 	"github.com/Guldana11/shortener/internal/config"
 	"github.com/Guldana11/shortener/internal/config/db"
+	"github.com/Guldana11/shortener/internal/grpcserver"
 	"github.com/Guldana11/shortener/internal/handler"
 	"github.com/Guldana11/shortener/internal/middleware"
 	"github.com/Guldana11/shortener/internal/repository"
+	"github.com/Guldana11/shortener/internal/service"
 	"github.com/Guldana11/shortener/internal/worker"
 	"github.com/gin-gonic/gin"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 var (
@@ -86,7 +92,17 @@ func main() {
 
 	deleteWorker := worker.NewDeleteWorker(repo, 1000)
 
-	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, publisher, cfg.TrustedSubnet)
+	svc := &service.URLService{
+		Repo:      repo,
+		BaseURL:   cfg.BaseURL,
+		Publisher: publisher,
+		Logger:    logger,
+	}
+
+	h, err := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, svc, cfg.TrustedSubnet)
+	if err != nil {
+		logger.Fatal("failed to create handler", zap.Error(err))
+	}
 	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
 	srv := &http.Server{
@@ -99,14 +115,37 @@ func main() {
 		zap.Bool("https", cfg.EnableHTTPS),
 	)
 
-	// запускаем сервер в отдельной горутине, чтобы main мог ловить сигналы
-	errCh := make(chan error, 1)
+	// запускаем HTTP-сервер в отдельной горутине
+	errCh := make(chan error, 2)
 	go func() {
 		if cfg.EnableHTTPS {
 			errCh <- srv.ListenAndServeTLS("cert.pem", "key.pem")
 			return
 		}
 		errCh <- srv.ListenAndServe()
+	}()
+
+	// запускаем gRPC-сервер
+	grpcOpts := []grpc.ServerOption{grpc.UnaryInterceptor(grpcserver.AuthInterceptor())}
+	if cfg.EnableHTTPS {
+		creds, err := credentials.NewServerTLSFromFile("cert.pem", "key.pem")
+		if err != nil {
+			logger.Fatal("failed to load TLS credentials for gRPC", zap.Error(err))
+		}
+		grpcOpts = append(grpcOpts, grpc.Creds(creds))
+	}
+	grpcSrv := grpc.NewServer(grpcOpts...)
+	pb.RegisterShortenerServiceServer(grpcSrv, &grpcserver.ShortenerServer{Svc: svc})
+
+	grpcLis, err := net.Listen("tcp", cfg.GRPCAddress)
+	if err != nil {
+		logger.Fatal("failed to listen for gRPC", zap.Error(err))
+	}
+	go func() {
+		logger.Info("gRPC server is starting...", zap.String("address", cfg.GRPCAddress))
+		if err := grpcSrv.Serve(grpcLis); err != nil {
+			errCh <- err
+		}
 	}()
 
 	// ловим сигналы завершения
@@ -137,6 +176,9 @@ func main() {
 	} else {
 		logger.Info("HTTP server stopped gracefully")
 	}
+
+	grpcSrv.GracefulStop()
+	logger.Info("gRPC server stopped gracefully")
 
 	deleteWorker.Stop()
 

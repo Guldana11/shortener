@@ -68,6 +68,27 @@ var hmacPool = pool.New(func() *hmacSHA256 {
 	}
 })
 
+// GenerateToken creates a new userID and signed token string (transport-agnostic).
+func GenerateToken() (userID string, token string) {
+	userID = uuid.New().String()
+	sig := sign(userID)
+	token = userID + "|" + sig
+	return userID, token
+}
+
+// ValidateToken validates a "userID|hmac" token and returns the userID.
+func ValidateToken(token string) (string, error) {
+	parts := strings.SplitN(token, "|", 2)
+	if len(parts) != 2 {
+		return "", errors.New("invalid token format")
+	}
+	userID, sig := parts[0], parts[1]
+	if !verify(userID, sig) {
+		return "", errors.New("invalid token signature")
+	}
+	return userID, nil
+}
+
 // sign создаёт HMAC-SHA256 подпись для переданной строки.
 func sign(data string) string {
 	h := hmacPool.Get()
