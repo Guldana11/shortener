@@ -86,7 +86,7 @@ func main() {
 
 	deleteWorker := worker.NewDeleteWorker(repo, 1000)
 
-	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, publisher)
+	h := handler.NewURLHandler(cfg.BaseURL, repo, deleteWorker, publisher, cfg.TrustedSubnet)
 	r := setupRouter(h, logger)
 	logger.Info("Server is starting...", zap.String("address", cfg.Address))
 	srv := &http.Server{
@@ -167,6 +167,7 @@ func setupRouter(h *handler.URLHandler, logger *zap.Logger) *gin.Engine {
 	r.POST("/api/shorten/batch", h.ShortenBatchHandler)
 	r.GET("/api/user/urls", h.GetUserURLs)
 	r.DELETE("/api/user/urls", h.DeleteUserURLs)
+	r.GET("/api/internal/stats", h.StatsHandler)
 
 	return r
 }

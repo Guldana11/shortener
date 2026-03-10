@@ -10,4 +10,5 @@ type Repository interface {
 	CreateForUser(userID, originalURL string) (string, error)
 	GetAllForUser(userID string) map[string]string
 	MarkAsDeleted(userID string, ids []string) error
+	GetStats(ctx context.Context) (urls int, users int, err error)
 }

@@ -160,6 +160,18 @@ func (r *URLRepository) Ping(ctx context.Context) error {
 	return nil
 }
 
+// GetStats возвращает количество URL и уникальных пользователей.
+func (r *URLRepository) GetStats(ctx context.Context) (int, int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var urls int
+	for _, userStore := range r.store {
+		urls += len(userStore)
+	}
+	return urls, len(r.store), nil
+}
+
 // saveToFile сохраняет данные на диск в JSON формате.
 func (r *URLRepository) saveToFile() {
 	if r.file == "" {

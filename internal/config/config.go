@@ -16,6 +16,7 @@ type Config struct {
 	AuditFile       string
 	AuditURL        string
 	EnableHTTPS     bool
+	TrustedSubnet   string
 }
 
 type FileConfig struct {
@@ -26,6 +27,7 @@ type FileConfig struct {
 	EnableHTTPS     *bool  `json:"enable_https"`
 	AuditFile       string `json:"audit_file"`
 	AuditURL        string `json:"audit_url"`
+	TrustedSubnet   string `json:"trusted_subnet"`
 }
 
 func Init() (*Config, error) {
@@ -37,6 +39,7 @@ func Init() (*Config, error) {
 	auditFileFlag := flag.String("audit-file", "", "путь к файлу аудита")
 	auditURLFlag := flag.String("audit-url", "", "url сервера аудита")
 	enableHTTPSFlag := flag.Bool("s", false, "enable HTTPS")
+	trustedSubnetFlag := flag.String("t", "", "CIDR trusted subnet")
 
 	// путь к json конфигу
 	configPathShort := flag.String("c", "", "path to json config")
@@ -103,6 +106,9 @@ func Init() (*Config, error) {
 	if set["s"] {
 		cfg.EnableHTTPS = *enableHTTPSFlag
 	}
+	if set["t"] {
+		cfg.TrustedSubnet = *trustedSubnetFlag
+	}
 
 	return cfg, nil
 }
@@ -141,6 +147,9 @@ func applyFileConfig(dst *Config, fc FileConfig) {
 	if fc.EnableHTTPS != nil {
 		dst.EnableHTTPS = *fc.EnableHTTPS
 	}
+	if fc.TrustedSubnet != "" {
+		dst.TrustedSubnet = fc.TrustedSubnet
+	}
 }
 
 func applyEnv(dst *Config) {
@@ -167,5 +176,8 @@ func applyEnv(dst *Config) {
 		if b, err := strconv.ParseBool(v); err == nil {
 			dst.EnableHTTPS = b
 		}
+	}
+	if v := os.Getenv("TRUSTED_SUBNET"); v != "" {
+		dst.TrustedSubnet = v
 	}
 }

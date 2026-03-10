@@ -16,7 +16,7 @@ func ExampleURLHandler_PostHandler() {
 
 	repo := repository.NewURLRepository("")
 	publisher := &audit.Publisher{}
-	h := NewURLHandler("http://localhost:8080", repo, nil, publisher)
+	h := NewURLHandler("http://localhost:8080", repo, nil, publisher, "")
 
 	r := gin.New()
 	r.POST("/", h.PostHandler)
@@ -35,7 +35,7 @@ func ExampleURLHandler_ShortenHandler() {
 
 	repo := repository.NewURLRepository("")
 	publisher := &audit.Publisher{}
-	h := NewURLHandler("http://localhost:8080", repo, nil, publisher)
+	h := NewURLHandler("http://localhost:8080", repo, nil, publisher, "")
 
 	r := gin.New()
 	r.POST("/api/shorten", h.ShortenHandler)
@@ -56,7 +56,7 @@ func ExampleURLHandler_PingHandler() {
 
 	repo := repository.NewURLRepository("")
 	publisher := &audit.Publisher{}
-	h := NewURLHandler("http://localhost:8080", repo, nil, publisher)
+	h := NewURLHandler("http://localhost:8080", repo, nil, publisher, "")
 
 	r := gin.New()
 	r.GET("/ping", h.PingHandler)
